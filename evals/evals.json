@@ -1,0 +1,47 @@
+{
+  "skill_name": "uspto-patent-search",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Locate all patents assigned to a company called Atari or similar. I'm not sure of the exact company name.",
+      "expected_output": "Should use PatentsView search_by_assignee with fuzzy matching, try variations of the name, and return a list of patents with titles, dates, and assignee names.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Has patent 10,000,000 ever been challenged at the PTAB? If so, what happened?",
+      "expected_output": "Should search PTAB proceedings by patent number, report any IPR/PGR/CBM trials found, and summarize the status and outcome of each.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I need to check the prosecution history for application 16/123,456. What office actions were issued and what were the rejections?",
+      "expected_output": "Should use ODP to get file wrapper documents, then use Legacy OA APIs to get structured rejection data, combining both into a clear timeline.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Who currently owns patent 9,876,543? Show me the full chain of title.",
+      "expected_output": "Should use the Assignment API to get all recorded assignments for this patent, present them chronologically showing each transfer from original assignee to current owner.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Find the most cited patents in the machine learning space from the last 5 years.",
+      "expected_output": "Should use PatentsView keyword search with text operators on title/abstract, filter by year, sort by citation count descending, and present top results.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "What 103 rejections has examiner Johnson issued in art unit 3689 recently?",
+      "expected_output": "Should use the Office Action Rejection API with Lucene query filtering by examiner name, art unit, and rejection_103 flag.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "Tell me everything about patent 11,234,567 — basic info, who owns it, any PTAB challenges, and its prosecution history.",
+      "expected_output": "Should chain multiple API calls: PatentsView for basic info and citations, Assignments for ownership, PTAB for challenges, ODP for prosecution documents. Should present a comprehensive summary.",
+      "files": []
+    }
+  ]
+}
