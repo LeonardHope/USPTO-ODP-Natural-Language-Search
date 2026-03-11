@@ -23,20 +23,20 @@ The skill determines which API to query, builds the request, handles authenticat
 
 ## APIs Covered
 
-| API | Source | What It Provides |
-|-----|--------|-----------------|
-| **PatentsView PatentSearch** | search.patentsview.org | Inventor/assignee/keyword search, citation networks, analytics across granted patents |
-| **ODP Patent File Wrapper** | api.uspto.gov | Application status, prosecution history documents, continuity data |
-| **ODP PTAB** | api.uspto.gov | IPR, PGR, CBM trials, appeal decisions |
-| **Office Action Rejection** | developer.uspto.gov | Structured rejection data (101, 102, 103, 112) |
-| **Office Action Text** | developer.uspto.gov | Full text of office actions |
-| **Enriched Citations** | developer.uspto.gov | NLP-parsed prior art citations from office actions |
-| **Patent Assignments** | api.uspto.gov (ODP) | Ownership transfers, chain of title, security interests |
+| API | Source | Status | What It Provides |
+|-----|--------|--------|-----------------|
+| **PatentsView PatentSearch** | search.patentsview.org | Migrating to ODP March 20, 2026 | Inventor/assignee/keyword search, citation networks, analytics across granted patents |
+| **ODP Patent File Wrapper** | api.uspto.gov | Stable | Application status, prosecution history documents, continuity data |
+| **ODP PTAB** | api.uspto.gov | Stable | IPR, PGR, CBM trials, appeal decisions |
+| **Office Action Rejection** | developer.uspto.gov | Migrating to ODP | Structured rejection data (101, 102, 103, 112) |
+| **Office Action Text** | developer.uspto.gov | Migrating to ODP | Full text of office actions |
+| **Enriched Citations** | developer.uspto.gov | v3 migrating to ODP; v1/v2 decommissioned | NLP-parsed prior art citations (Oct 2017 – April 2019 only) |
+| **Patent Assignments** | api.uspto.gov (ODP) | Stable | Ownership transfers, chain of title, security interests |
 
 ## Prerequisites
 
 - Python 3.8+
-- Two free API keys (see Setup below)
+- Two free API keys (see Setup below). Note: obtaining a PatentsView key may be difficult — see [Migration Notice](#uspto-api-migration-march-20-2026).
 
 ## Setup
 
@@ -48,8 +48,8 @@ The skill determines which API to query, builds the request, handles authenticat
 3. Copy your API key from the My ODP page
 
 **PatentsView key:**
-1. Go to [patentsview.org/apis/keyrequest](https://patentsview.org/apis/keyrequest)
-2. Fill out the form — the key is emailed to you
+1. The original key request page at patentsview.org has been removed. Try the [PatentsView support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18) instead.
+2. If that link stops working, PatentsView is migrating to the USPTO Open Data Portal on March 20, 2026 — a single ODP key may cover both APIs after the migration.
 
 ### 2. Run the Setup Wizard
 
@@ -115,12 +115,12 @@ uspto-patent-search/
 
 The skill uses a decision matrix to route natural language questions to the right API:
 
-- **"Search by inventor or company"** → PatentsView (disambiguated name data, fuzzy name matching)
+- **"Search by inventor or company"** → PatentsView (disambiguated name data, fuzzy name matching). *Note: some query operators are currently broken; the skill uses workarounds.*
 - **"Application status or prosecution docs"** → ODP File Wrapper (real-time data, full file wrappers)
 - **"PTAB challenges"** → ODP PTAB API (IPR/PGR/CBM proceedings and decisions)
-- **"Office action rejections"** → Legacy OA APIs (structured 101/102/103/112 rejection data)
-- **"Full text of an office action"** → Legacy OA Text API (examiner's amendments, detailed reasoning)
-- **"What prior art was cited?"** → Enriched Citations API (NLP-parsed references with passage locations)
+- **"Office action rejections"** → Legacy OA APIs (structured 101/102/103/112 rejection data). *Migrating to ODP.*
+- **"Full text of an office action"** → Legacy OA Text API (examiner's amendments, detailed reasoning). *Migrating to ODP.*
+- **"What prior art was cited?"** → Enriched Citations API (NLP-parsed references with passage locations). *Data frozen as of April 2019.*
 - **"Who owns this patent?"** → ODP Assignment data (complete chain of title)
 - **"Download prosecution documents"** → ODP File Wrapper (PDF download with rate limiting)
 
@@ -143,10 +143,10 @@ python patentsview_search.py patent 10000000
 python patentsview_search.py citations 10000000
 
 # Search by inventor
-python patentsview_search.py inventor "Smith" --first "John" --year-from 2020
+python patentsview_search.py inventor "Smith" --first "John"
 
-# Search by keyword
-python patentsview_search.py keyword "autonomous vehicle lidar" --all
+# Search by keyword (title search)
+python patentsview_search.py keyword "autonomous vehicle lidar"
 
 # Search by CPC classification code
 python patentsview_search.py cpc H04L
@@ -213,19 +213,54 @@ Different APIs have different update schedules:
 
 | API | Update Frequency | Notes |
 |-----|-----------------|-------|
-| ODP File Wrapper | Daily | Real-time application data |
-| ODP PTAB | Near-real-time | Syncs with PTAB case tracking system |
-| ODP Assignments | Daily | All recorded assignments |
-| PatentsView | Quarterly | ~3 month lag for newest grants |
-| Legacy OA Rejections | Daily | June 2018 to ~180 days ago |
-| Legacy OA Text | Daily | Office action full text |
-| Enriched Citations | Frozen (last update April 2019) | Oct 2017 – April 2019 office actions only |
+| ODP File Wrapper | Daily | Stable — real-time application data |
+| ODP PTAB | Near-real-time | Stable — syncs with PTAB case tracking system |
+| ODP Assignments | Daily | Stable — all recorded assignments |
+| PatentsView | Quarterly | Migrating March 20, 2026 — ~3 month lag for newest grants |
+| Legacy OA Rejections | Daily | Migrating to ODP — June 2018 to ~180 days ago |
+| Legacy OA Text | Daily | Migrating to ODP — office action full text |
+| Enriched Citations | Frozen | v1/v2 decommissioned Jan 2026; v3 migrating to ODP — Oct 2017 – April 2019 only |
 
 **Limitation — recently issued patents:** PatentsView is the primary API for broad keyword, inventor, and assignee searches across granted patents, but it updates quarterly with an approximately 3-month lag. Patents issued in the most recent ~3 months will not appear in PatentsView search results. The ODP File Wrapper API updates daily and can look up specific recent patents by application or patent number, but it does not support the same broad keyword-based discovery searches. There is currently no USPTO API that combines both real-time coverage and full-text search across all granted patents.
 
-## Migration Notice
+## USPTO API Migration (March 20, 2026)
 
-The Legacy Developer Portal APIs (Office Actions, Enriched Citations) are being migrated to the new Open Data Portal in early 2026. The scripts are designed with configurable base URLs to accommodate endpoint changes. Check [developer.uspto.gov](https://developer.uspto.gov) for the latest migration status.
+The USPTO is consolidating all patent data APIs onto the [Open Data Portal](https://data.uspto.gov). Several migrations are happening on overlapping timelines, and some have already completed:
+
+### PatentsView → Open Data Portal (March 20, 2026)
+
+PatentsView will migrate from `search.patentsview.org` to the USPTO Open Data Portal on **March 20, 2026**. The USPTO has indicated that some PatentsView functions will experience temporary interruptions during the transition. It is not yet clear whether the current PatentSearch API query format, endpoints, or authentication will change after the migration.
+
+Additionally, the PatentsView team has taken down their community forum and removed the API key request link from patentsview.org. New API keys may still be available via their [Atlassian support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18).
+
+**What may break:** `patentsview_search.py` — base URL, query syntax, field names, and API key handling could all change.
+
+### Legacy Office Action APIs → Open Data Portal (in progress)
+
+The following APIs at `developer.uspto.gov` are being migrated to the new Open Data Portal:
+
+| API | Status |
+|-----|--------|
+| Enriched Citation API v1/v2 | **Decommissioned** (January 30, 2026) |
+| Office Action Citations API (beta) | **Decommissioned** (January 30, 2026) |
+| Enriched Citation API v3 | Migrating to ODP |
+| Office Action Rejection API | Migrating to ODP |
+| Office Action Text Retrieval API | Migrating to ODP |
+
+**What may break:** `office_actions_search.py` — the `developer.uspto.gov/ds-api` base URL and Lucene query syntax will likely change when these move to ODP.
+
+### Known Limitations (current)
+
+- **PatentsView query operators** (`_contains`, `_eq`, `_text_any`, `_gte`, etc.) are currently returning 500 errors. This may be related to the pending migration. The code works around this by using plain value matching and corporate name variant lists for fuzzy search. Year range filtering is temporarily unavailable.
+- **Enriched Citations** data is frozen as of April 2019 and covers only office actions from October 2017 through April 2019. The v1/v2 APIs have been decommissioned; only v3 remains.
+
+### Staying Updated
+
+- Check [data.uspto.gov](https://data.uspto.gov) for ODP updates
+- Check [search.patentsview.org/docs](https://search.patentsview.org/docs/) for PatentsView API status
+- Check [developer.uspto.gov](https://developer.uspto.gov) for legacy API decommission notices
+
+An updated version of this skill targeting the post-migration APIs is planned for release by March 20, 2026.
 
 ## Contributing
 
