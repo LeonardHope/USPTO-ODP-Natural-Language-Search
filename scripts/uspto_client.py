@@ -108,12 +108,17 @@ class USPTOClient:
 
     # ── Credential checks ──────────────────────────────────────────────
 
+    @property
+    def has_patentsview_key(self) -> bool:
+        """Check if a PatentsView API key is configured (without raising)."""
+        return bool(self.pv_key)
+
     def require_patentsview_key(self):
         if not self.pv_key:
             raise APIError(
-                "[SETUP_REQUIRED] PATENTSVIEW_API_KEY is not set.\n"
-                "Run: python3 get_started.py   (from the project root)\n"
-                "Or get a free key at: https://patentsview.org/apis/keyrequest"
+                "PATENTSVIEW_API_KEY is not set.\n"
+                "PatentsView features will fall back to ODP where possible.\n"
+                "To get a key, try: https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18"
             )
 
     def require_odp_key(self):
@@ -443,12 +448,13 @@ def resolve_patent_to_app_number(patent_number: str) -> str:
 def get_client() -> USPTOClient:
     """Get a configured USPTOClient instance.
 
-    On first use, if API keys are missing and stdin is interactive,
-    automatically launches the setup wizard.
+    On first use, if the ODP key is missing and stdin is interactive,
+    automatically launches the setup wizard. The PatentsView key is
+    optional — functions fall back to ODP when it's not available.
     """
     client = USPTOClient()
     status = client.check_keys()
-    if not all(status.values()) and sys.stdin.isatty():
+    if not status["odp_key_set"] and sys.stdin.isatty():
         if _run_setup_wizard():
             client = USPTOClient()  # recreate with new keys
     return client
@@ -460,7 +466,12 @@ if __name__ == "__main__":
     print("API Key Status:")
     for key, is_set in status.items():
         icon = "OK" if is_set else "MISSING"
-        print(f"  {key}: {icon}")
-    if not all(status.values()):
+        label = key
+        if key == "patentsview_key_set":
+            label += " (optional)"
+        print(f"  {label}: {icon}")
+    if not status["odp_key_set"]:
         print("\n[SETUP_REQUIRED] Run: python3 get_started.py")
         sys.exit(1)
+    if not status["patentsview_key_set"]:
+        print("\nNote: PatentsView key is optional. Searches will use ODP where possible.")

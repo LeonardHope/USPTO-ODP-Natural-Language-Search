@@ -31,12 +31,14 @@ KEYS = [
         "label": "USPTO Open Data Portal (ODP) API Key",
         "url": "https://data.uspto.gov/myodp",
         "note": "Covers: ODP File Wrapper, PTAB, Assignments, Legacy Office Action APIs",
+        "required": True,
     },
     {
         "var": "PATENTSVIEW_API_KEY",
-        "label": "PatentsView PatentSearch API Key",
-        "url": "https://patentsview.org/apis/keyrequest",
-        "note": "Covers: Patent search by inventor, assignee, keyword, CPC, citations",
+        "label": "PatentsView PatentSearch API Key (optional)",
+        "url": "https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18",
+        "note": "Optional — enables CPC/attorney search and citation networks. Without it, searches fall back to ODP.",
+        "required": False,
     },
 ]
 
@@ -181,17 +183,19 @@ def prompt_for_keys():
 
     # Summary
     print("API Key Status:")
-    all_set = True
+    required_set = True
     for key_info in KEYS:
         var = key_info["var"]
         val = values.get(var)
+        optional_tag = "" if key_info.get("required", True) else " (optional)"
         if val:
             print(f"  {var}: OK ({mask(val)})")
         else:
-            print(f"  {var}: MISSING")
-            all_set = False
+            print(f"  {var}: MISSING{optional_tag}")
+            if key_info.get("required", True):
+                required_set = False
 
-    return all_set
+    return required_set
 
 
 # ── Main ──────────────────────────────────────────────────────────────
@@ -218,7 +222,7 @@ def main():
         verify_script = PROJECT_ROOT / "scripts" / "uspto_client.py"
         subprocess.run([str(venv_python), str(verify_script)])
     else:
-        print("Some keys are missing. You can re-run this wizard anytime:")
+        print("Required keys are missing. You can re-run this wizard anytime:")
         print("  python3 get_started.py")
 
 

@@ -59,12 +59,12 @@ This creates a Python virtual environment (`.venv`), installs dependencies, prom
 **Alternative — set environment variables directly:**
 ```bash
 export USPTO_ODP_API_KEY="their_key"
-export PATENTSVIEW_API_KEY="their_key"
+export PATENTSVIEW_API_KEY="their_key"  # optional
 ```
 
-**Where to get the keys (both free):**
-- **ODP key**: Register at https://data.uspto.gov/myodp (free, requires ID.me verification)
-- **PatentsView key**: Request at https://patentsview.org/apis/keyrequest (free, emailed)
+**Where to get the keys:**
+- **ODP key (required)**: Register at https://data.uspto.gov/myodp (free, requires ID.me verification)
+- **PatentsView key (optional)**: Try https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18 — the original key request page has been removed. PatentsView is migrating to ODP on March 20, 2026. Without this key, inventor/assignee/keyword/patent number searches fall back to ODP automatically. CPC search, attorney search, and citation network lookups are unavailable without it.
 
 ---
 
@@ -97,14 +97,14 @@ Use this decision matrix. Check conditions top to bottom — use the first match
 | See what prior art was cited | "cited references", "prior art cited", "citations in OA" | Legacy OA | `office_actions_search.search_enriched_citations()` |
 | Find who owns a patent | "owner", "assigned to", "chain of title", "assignment" | Assignments | `assignment_search.get_assignment_chain()` |
 | Track patent acquisitions/sales | "bought", "sold", "transferred", "acquired" | Assignments | `assignment_search.search_patent_assignments()` |
-| Search by inventor name | person name + "inventor", "invented by", "patents by" | PatentsView | `patentsview_search.search_by_inventor()` |
-| Search by company/assignee | company name + "patents", "assigned to", "portfolio" | PatentsView | `patentsview_search.search_by_assignee()` |
-| Search by keyword/technology | technology terms, "patents about", "related to" | PatentsView | `patentsview_search.search_by_keyword()` |
-| Search by CPC/classification | CPC code, technology class, "class H04L" | PatentsView | `patentsview_search.search_by_cpc()` |
-| Look up a specific granted patent | patent number only, basic info | PatentsView | `patentsview_search.search_by_patent_number()` |
-| Find patent citations | "cites", "cited by", "citation network", "prior art" | PatentsView | `patentsview_search.get_patent_citations()` |
-| Find who cites a patent | "cited by", "how influential", "impact" | PatentsView | `patentsview_search.get_cited_by()` |
-| Search by attorney/firm | law firm name, attorney name | PatentsView | `patentsview_search.search_by_attorney()` |
+| Search by inventor name | person name + "inventor", "invented by", "patents by" | PatentsView (ODP fallback) | `patentsview_search.search_by_inventor()` |
+| Search by company/assignee | company name + "patents", "assigned to", "portfolio" | PatentsView (ODP fallback) | `patentsview_search.search_by_assignee()` |
+| Search by keyword/technology | technology terms, "patents about", "related to" | PatentsView (ODP fallback) | `patentsview_search.search_by_keyword()` |
+| Search by CPC/classification | CPC code, technology class, "class H04L" | PatentsView only | `patentsview_search.search_by_cpc()` |
+| Look up a specific granted patent | patent number only, basic info | PatentsView (ODP fallback) | `patentsview_search.search_by_patent_number()` |
+| Find patent citations | "cites", "cited by", "citation network", "prior art" | PatentsView only | `patentsview_search.get_patent_citations()` |
+| Find who cites a patent | "cited by", "how influential", "impact" | PatentsView only | `patentsview_search.get_cited_by()` |
+| Search by attorney/firm | law firm name, attorney name | PatentsView only | `patentsview_search.search_by_attorney()` |
 | Analytics / comparisons / rankings | "most patents", "top", "compare", "trend", "how many" | PatentsView | Combine multiple calls |
 | List documents in file wrapper | "list documents", "what's in the file wrapper", "show prosecution docs" | ODP Document Download | `download_documents.list_documents()` |
 | Download prosecution documents | "download", "save", "get the PDFs", "pull the file history" | ODP Document Download | `download_documents.download_documents()` |
@@ -241,10 +241,14 @@ User: "We're thinking of asserting patent 9,876,543. What should I know?"
 ## Error Handling
 
 If a script raises an `APIError`:
-- **Missing API key**: Tell the user which key is missing and how to set it
+- **Missing API key**: Tell the user which key is missing and how to set it. Note: only the ODP key is required — PatentsView is optional.
 - **Rate limit (429)**: The scripts retry automatically; if persistent, suggest waiting
 - **Not found (404)**: Check the number format; suggest trying without formatting
 - **Server error (5xx)**: The scripts retry; if persistent, the API may be down
+
+**PatentsView fallback behavior**: The PatentsView API key is optional. When it's missing or PatentsView returns errors, inventor/assignee/keyword/patent number searches automatically fall back to the ODP free-text search API. ODP results may have different fields (e.g., no citation counts), but the formatters handle both sources transparently. CPC search, attorney search, and citation network queries require PatentsView and will return a descriptive message if the key is unavailable.
+
+**Migration note (March 20, 2026)**: PatentsView is migrating to the Open Data Portal. If PatentsView stops working entirely, all functions with ODP fallbacks will continue working seamlessly.
 
 ---
 

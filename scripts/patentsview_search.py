@@ -35,6 +35,43 @@ from format_results import format_patent_list, format_patent_detail, format_cita
 logger = logging.getLogger("patentsview_search")
 
 
+# ── ODP fallback helper ────────────────────────────────────────────────
+
+def _with_odp_fallback(pv_func, odp_func, *args, **kwargs):
+    """Try a PatentsView call; if the key is missing or the call fails, fall back to ODP.
+
+    Args:
+        pv_func: Callable that queries PatentsView (called with no args)
+        odp_func: Callable that queries ODP as fallback (called with no args)
+
+    Returns:
+        API response dict. If from ODP, includes _source='odp'.
+    """
+    client = get_client()
+    if client.has_patentsview_key:
+        try:
+            result = pv_func()
+            # If PatentsView returned results, use them
+            if result.get("total_hits", result.get("count", 0)) > 0:
+                return result
+            # Zero results — try ODP before giving up
+            logger.info("PatentsView returned 0 results. Trying ODP fallback.")
+        except APIError as e:
+            logger.warning(f"PatentsView error: {e}. Trying ODP fallback.")
+        except Exception as e:
+            logger.warning(f"PatentsView unexpected error: {e}. Trying ODP fallback.")
+
+    # Fall back to ODP
+    try:
+        result = odp_func()
+        if isinstance(result, dict):
+            result["_source"] = "odp"
+        return result
+    except APIError as e:
+        logger.warning(f"ODP fallback also failed: {e}")
+        raise
+
+
 # ── Default field sets ──────────────────────────────────────────────────
 # The API returns full nested arrays (assignees[], inventors[], etc.)
 # automatically. These field lists only control top-level patent fields.
@@ -151,8 +188,8 @@ def search_by_assignee(name: str, fuzzy: bool = True,
     Since _contains is broken, fuzzy matching works by trying common
     corporate name variations (Inc., LLC, Corp., etc.) as an OR list.
 
-    Falls back to ODP free-text search when PatentsView returns no results
-    (PatentsView has assignee data gaps for some patents).
+    Falls back to ODP free-text search when PatentsView is unavailable
+    or returns no results.
 
     Args:
         name: Company or organization name
@@ -161,56 +198,36 @@ def search_by_assignee(name: str, fuzzy: bool = True,
         year_to: Filter patents granted on or before this year
         size: Number of results to return
     """
-    if fuzzy:
-        variants = _assignee_name_variants(name)
-        if len(variants) == 1:
-            q = {"assignees.assignee_organization": variants[0]}
-        else:
-            q = {"assignees.assignee_organization": variants}
-    else:
-        q = {"assignees.assignee_organization": name}
-
-    # NOTE: Date range operators (_gte, _lte) are currently broken.
-    # Year filtering is not available until operators are restored.
     if year_from or year_to:
         logger.warning(
             "Year filtering is currently unavailable — PatentsView comparison "
             "operators are returning errors. Returning unfiltered results."
         )
 
-    result = search_patents(q, size=size)
+    def pv_call():
+        if fuzzy:
+            variants = _assignee_name_variants(name)
+            if len(variants) == 1:
+                q = {"assignees.assignee_organization": variants[0]}
+            else:
+                q = {"assignees.assignee_organization": variants}
+        else:
+            q = {"assignees.assignee_organization": name}
+        return search_patents(q, size=size)
 
-    # Fallback: if PatentsView returned no results, try ODP free-text search
-    if result.get("total_hits", 0) == 0:
-        logger.info(
-            f"PatentsView returned 0 results for assignee '{name}'. "
-            "Falling back to ODP search."
-        )
-        try:
-            return _odp_assignee_fallback(name, size=size)
-        except Exception as e:
-            logger.warning(f"ODP fallback failed: {e}")
+    def odp_call():
+        from odp_search import search_applications
+        return search_applications(query=name, rows=size)
 
-    return result
-
-
-def _odp_assignee_fallback(name: str, size: int = 25) -> dict:
-    """Search ODP for patents by assignee name as a fallback.
-
-    ODP assignment records often have assignee data that PatentsView lacks.
-    Returns results in a format compatible with format_patent_list(source='odp').
-    """
-    from odp_search import search_applications
-    odp_result = search_applications(query=name, rows=size)
-    # Mark source as ODP so the formatter handles it correctly
-    odp_result["_source"] = "odp"
-    return odp_result
+    return _with_odp_fallback(pv_call, odp_call)
 
 
 def search_by_inventor(last_name: str, first_name: str = None,
                        fuzzy: bool = True, year_from: int = None,
                        year_to: int = None, size: int = 25) -> dict:
     """Search patents by inventor name.
+
+    Falls back to ODP free-text search when PatentsView is unavailable.
 
     Args:
         last_name: Inventor's last name (exact match)
@@ -220,19 +237,25 @@ def search_by_inventor(last_name: str, first_name: str = None,
         year_to: Currently unavailable (operators broken)
         size: Number of results
     """
-    conditions = [{"inventors.inventor_name_last": last_name}]
-
-    if first_name:
-        conditions.append({"inventors.inventor_name_first": first_name})
-
     if year_from or year_to:
         logger.warning(
             "Year filtering is currently unavailable — PatentsView comparison "
             "operators are returning errors. Returning unfiltered results."
         )
 
-    q = {"_and": conditions} if len(conditions) > 1 else conditions[0]
-    return search_patents(q, size=size)
+    def pv_call():
+        conditions = [{"inventors.inventor_name_last": last_name}]
+        if first_name:
+            conditions.append({"inventors.inventor_name_first": first_name})
+        q = {"_and": conditions} if len(conditions) > 1 else conditions[0]
+        return search_patents(q, size=size)
+
+    def odp_call():
+        from odp_search import search_applications
+        name = f"{first_name} {last_name}" if first_name else last_name
+        return search_applications(inventor_name=name, rows=size)
+
+    return _with_odp_fallback(pv_call, odp_call)
 
 
 def search_by_keyword(keywords: str, search_in: str = "title",
@@ -240,8 +263,7 @@ def search_by_keyword(keywords: str, search_in: str = "title",
                       year_to: int = None, size: int = 25) -> dict:
     """Search patents by keyword in title.
 
-    NOTE: With operators broken, only patent_title supports text search
-    via plain value matching. Abstract and claims search is unavailable.
+    Falls back to ODP free-text search when PatentsView is unavailable.
 
     Args:
         keywords: Search terms
@@ -257,20 +279,27 @@ def search_by_keyword(keywords: str, search_in: str = "title",
             "requires operators that are returning errors. Searching title only."
         )
 
-    q = {"patent_title": keywords}
-
     if year_from or year_to:
         logger.warning(
             "Year filtering is currently unavailable — PatentsView comparison "
             "operators are returning errors. Returning unfiltered results."
         )
 
-    return search_patents(q, fields=PATENT_DETAIL_FIELDS, size=size)
+    def pv_call():
+        return search_patents({"patent_title": keywords}, fields=PATENT_DETAIL_FIELDS, size=size)
+
+    def odp_call():
+        from odp_search import search_applications
+        return search_applications(title=keywords, rows=size)
+
+    return _with_odp_fallback(pv_call, odp_call)
 
 
 def search_by_cpc(cpc_code: str, year_from: int = None,
                   year_to: int = None, size: int = 25) -> dict:
     """Search patents by CPC classification code.
+
+    NOTE: No ODP fallback — CPC search requires PatentsView.
 
     Args:
         cpc_code: CPC class, subclass, or group (e.g. 'H04L', 'G06N')
@@ -278,7 +307,12 @@ def search_by_cpc(cpc_code: str, year_from: int = None,
         year_to: Currently unavailable (operators broken)
         size: Number of results
     """
-    # Determine the appropriate field based on code length
+    client = get_client()
+    if not client.has_patentsview_key:
+        return {"error": "CPC classification search requires a PatentsView API key. "
+                "This feature has no ODP equivalent.",
+                "patents": [], "total_hits": 0, "count": 0}
+
     if len(cpc_code) <= 4:
         field = "cpc_current.cpc_subclass_id"
     else:
@@ -298,18 +332,31 @@ def search_by_cpc(cpc_code: str, year_from: int = None,
 def search_by_patent_number(patent_number: str) -> dict:
     """Get a specific patent by its patent number.
 
+    Falls back to ODP application lookup when PatentsView is unavailable.
+
     Args:
         patent_number: US patent number (e.g. '10000000', 'RE49000')
     """
-    # Strip common formatting
     clean = patent_number.replace(",", "").replace("US", "").strip()
-    q = {"patent_id": clean}
-    return search_patents(q, fields=PATENT_DETAIL_FIELDS, size=1)
+
+    def pv_call():
+        return search_patents({"patent_id": clean}, fields=PATENT_DETAIL_FIELDS, size=1)
+
+    def odp_call():
+        from odp_search import get_application_by_patent_number
+        app = get_application_by_patent_number(clean)
+        if app:
+            return {"patentFileWrapperDataBag": [app], "count": 1}
+        return {"patentFileWrapperDataBag": [], "count": 0}
+
+    return _with_odp_fallback(pv_call, odp_call)
 
 
 def search_by_attorney(last_name: str, first_name: str = None,
                        organization: str = None, size: int = 25) -> dict:
     """Search patents by attorney or law firm.
+
+    NOTE: No ODP fallback — attorney search requires PatentsView.
 
     Args:
         last_name: Attorney's last name
@@ -317,6 +364,12 @@ def search_by_attorney(last_name: str, first_name: str = None,
         organization: Law firm name (optional)
         size: Number of results
     """
+    client = get_client()
+    if not client.has_patentsview_key:
+        return {"error": "Attorney/law firm search requires a PatentsView API key. "
+                "This feature has no ODP equivalent.",
+                "patents": [], "total_hits": 0, "count": 0}
+
     conditions = [{"attorneys.attorney_name_last": last_name}]
     if first_name:
         conditions.append({"attorneys.attorney_name_first": first_name})
@@ -330,11 +383,19 @@ def search_by_attorney(last_name: str, first_name: str = None,
 def get_patent_citations(patent_number: str, size: int = 100) -> dict:
     """Get US patent citations for a given patent.
 
+    NOTE: No ODP fallback — citation network data requires PatentsView.
+
     Args:
         patent_number: The citing patent's number
         size: Number of citations to return
     """
     client = get_client()
+    if not client.has_patentsview_key:
+        return {"error": "Citation search requires a PatentsView API key. "
+                "This feature has no ODP equivalent. Try the Legacy Enriched "
+                "Citations API for office action citations (limited date range).",
+                "us_patent_citations": [], "total_hits": 0, "count": 0}
+
     clean = patent_number.replace(",", "").replace("US", "").strip()
     return client.patentsview_get(
         endpoint="patent/us_patent_citation",
@@ -347,11 +408,18 @@ def get_patent_citations(patent_number: str, size: int = 100) -> dict:
 def get_cited_by(patent_number: str, size: int = 100) -> dict:
     """Find patents that cite a given patent.
 
+    NOTE: No ODP fallback — citation network data requires PatentsView.
+
     Args:
         patent_number: The cited patent's number
         size: Number of results to return
     """
     client = get_client()
+    if not client.has_patentsview_key:
+        return {"error": "Citation search requires a PatentsView API key. "
+                "This feature has no ODP equivalent.",
+                "us_patent_citations": [], "total_hits": 0, "count": 0}
+
     clean = patent_number.replace(",", "").replace("US", "").strip()
     return client.patentsview_get(
         endpoint="patent/us_patent_citation",
@@ -362,8 +430,16 @@ def get_cited_by(patent_number: str, size: int = 100) -> dict:
 
 
 def get_inventor_details(inventor_id: str) -> dict:
-    """Look up a disambiguated inventor by their PatentsView ID."""
+    """Look up a disambiguated inventor by their PatentsView ID.
+
+    NOTE: No ODP fallback — disambiguated inventor data requires PatentsView.
+    """
     client = get_client()
+    if not client.has_patentsview_key:
+        return {"error": "Inventor detail lookup requires a PatentsView API key. "
+                "Try searching by inventor name instead (uses ODP fallback).",
+                "inventors": []}
+
     return client.patentsview_get(
         endpoint="inventor",
         q={"inventor_id": inventor_id},
@@ -386,8 +462,14 @@ def get_assignee_details(assignee_name: str) -> dict:
 
     Uses name variants for fuzzy matching since _contains is broken.
     NOTE: The /assignee/ entity endpoint uses unprefixed field names.
+    No ODP fallback — disambiguated assignee data requires PatentsView.
     """
     client = get_client()
+    if not client.has_patentsview_key:
+        return {"error": "Assignee detail lookup requires a PatentsView API key. "
+                "Try searching by assignee name instead (uses ODP fallback).",
+                "assignees": []}
+
     variants = _assignee_name_variants(assignee_name)
     if len(variants) == 1:
         q = {"assignee_organization": variants[0]}
@@ -534,7 +616,8 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         elif args.command == "patent":
-            print(format_patent_detail(result, source="patentsview"))
+            source = result.pop("_source", "patentsview") if isinstance(result, dict) else "patentsview"
+            print(format_patent_detail(result, source=source))
         elif args.command == "citations":
             direction = "cited_by" if args.cited_by else "forward"
             print(format_citation_list(result, direction=direction))

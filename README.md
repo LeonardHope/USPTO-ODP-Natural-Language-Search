@@ -36,20 +36,21 @@ The skill determines which API to query, builds the request, handles authenticat
 ## Prerequisites
 
 - Python 3.8+
-- Two free API keys (see Setup below). Note: obtaining a PatentsView key may be difficult — see [Migration Notice](#uspto-api-migration-march-20-2026).
+- One free API key (required), one optional (see Setup below)
 
 ## Setup
 
-### 1. Get API Keys (both free)
+### 1. Get API Keys
 
-**USPTO Open Data Portal key:**
+**USPTO Open Data Portal key (required):**
 1. Go to [data.uspto.gov/myodp](https://data.uspto.gov/myodp)
 2. Create a USPTO.gov account and verify with ID.me (one-time)
 3. Copy your API key from the My ODP page
 
-**PatentsView key:**
+**PatentsView key (optional):**
 1. The original key request page at patentsview.org has been removed. Try the [PatentsView support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18) instead.
 2. If that link stops working, PatentsView is migrating to the USPTO Open Data Portal on March 20, 2026 — a single ODP key may cover both APIs after the migration.
+3. **Without a PatentsView key**, inventor/assignee/keyword/patent number searches automatically fall back to the ODP search API. CPC classification search, attorney search, and citation network queries are unavailable without it.
 
 ### 2. Run the Setup Wizard
 
@@ -68,7 +69,7 @@ On first use, the wizard also launches automatically if keys are not yet configu
 **Alternative — set environment variables** manually in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 ```bash
 export USPTO_ODP_API_KEY="your_odp_key_here"
-export PATENTSVIEW_API_KEY="your_patentsview_key_here"
+export PATENTSVIEW_API_KEY="your_patentsview_key_here"  # optional
 ```
 
 ## Installation as a Claude Skill
@@ -115,7 +116,7 @@ uspto-patent-search/
 
 The skill uses a decision matrix to route natural language questions to the right API:
 
-- **"Search by inventor or company"** → PatentsView (disambiguated name data, fuzzy name matching). *Note: some query operators are currently broken; the skill uses workarounds.*
+- **"Search by inventor or company"** → PatentsView with ODP fallback (disambiguated name data, fuzzy name matching). *Note: some query operators are currently broken; the skill uses workarounds. If PatentsView is unavailable, searches fall back to ODP automatically.*
 - **"Application status or prosecution docs"** → ODP File Wrapper (real-time data, full file wrappers)
 - **"PTAB challenges"** → ODP PTAB API (IPR/PGR/CBM proceedings and decisions)
 - **"Office action rejections"** → Legacy OA APIs (structured 101/102/103/112 rejection data). *Migrating to ODP.*

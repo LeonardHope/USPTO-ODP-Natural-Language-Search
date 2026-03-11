@@ -25,6 +25,10 @@ def format_patent_list(response: dict, source: str = "patentsview") -> str:
     Returns:
         Formatted text summary
     """
+    # Handle error dicts from fallback failures (PatentsView returns "error": false on success)
+    if isinstance(response, dict) and response.get("error"):
+        return response["error"]
+
     lines = []
 
     if source == "patentsview":
@@ -118,6 +122,10 @@ def format_patent_detail(patent: dict, source: str = "patentsview") -> str:
     """
     lines = []
 
+    # Handle error dicts from fallback failures (PatentsView returns "error": false on success)
+    if isinstance(patent, dict) and patent.get("error"):
+        return patent["error"]
+
     if source == "patentsview":
         # Handle response wrapper
         if "patents" in patent:
@@ -170,6 +178,54 @@ def format_patent_detail(patent: dict, source: str = "patentsview") -> str:
         lines.append(f"Times cited by:     {patent.get('patent_num_times_cited_by_us_patents', 'N/A')}")
         lines.append(f"Processing days:    {patent.get('patent_processing_days', 'N/A')}")
 
+    elif source == "odp":
+        # Handle ODP application data (from get_application_by_patent_number)
+        if "patentFileWrapperDataBag" in patent:
+            bags = patent["patentFileWrapperDataBag"]
+            if not bags:
+                return "No patent found."
+            patent = bags[0]
+
+        meta = patent.get("applicationMetaData", {})
+        app_num = patent.get("applicationNumberText", "N/A")
+        patent_num = meta.get("patentNumber", "")
+        title = meta.get("inventionTitle", "N/A")
+        status = meta.get("applicationStatusDescriptionText", "N/A")
+        filing_date = meta.get("filingDate", "N/A")
+        grant_date = meta.get("grantDate", "N/A")
+        app_type = meta.get("applicationTypeCategory", "N/A")
+
+        header = f"US Patent {patent_num}" if patent_num else f"Application {app_num}"
+        lines.append(header)
+        lines.append(f"{'=' * 50}")
+        lines.append(f"Title:    {title}")
+        lines.append(f"Status:   {status}")
+        lines.append(f"Filed:    {filing_date}")
+        if patent_num:
+            lines.append(f"Granted:  {grant_date}")
+            lines.append(f"Patent:   US {patent_num}")
+        lines.append(f"App No:   {app_num}")
+        lines.append(f"Type:     {app_type}")
+
+        # Applicant/assignee info
+        applicants = meta.get("applicantBag", [])
+        if applicants:
+            names = [a.get("applicantNameText", "") for a in applicants if a.get("applicantNameText")]
+            if names:
+                lines.append(f"")
+                lines.append(f"Applicant:          {', '.join(names)}")
+
+        # Inventor info
+        inventors = meta.get("inventorBag", [])
+        if inventors:
+            inv_names = [f"{inv.get('inventorNameText', '')}".strip() for inv in inventors[:5]]
+            inv_names = [n for n in inv_names if n]
+            if inv_names:
+                inv_str = ", ".join(inv_names)
+                if len(inventors) > 5:
+                    inv_str += f" (+{len(inventors) - 5} more)"
+                lines.append(f"Inventors:          {inv_str}")
+
     return "\n".join(lines)
 
 
@@ -183,6 +239,10 @@ def format_citation_list(response: dict, direction: str = "forward") -> str:
     Returns:
         Formatted citation list
     """
+    # Handle error dicts from fallback failures (PatentsView returns "error": false on success)
+    if isinstance(response, dict) and response.get("error"):
+        return response["error"]
+
     citations = response.get("us_patent_citations", [])
     total = response.get("total_hits", len(citations))
 
