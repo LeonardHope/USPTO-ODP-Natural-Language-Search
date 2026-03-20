@@ -230,11 +230,11 @@ The USPTO is consolidating all patent data APIs onto the [Open Data Portal](http
 
 ### PatentsView → Open Data Portal (March 20, 2026)
 
-PatentsView will migrate from `search.patentsview.org` to the USPTO Open Data Portal on **March 20, 2026**. The USPTO has indicated that some PatentsView functions will experience temporary interruptions during the transition. It is not yet clear whether the current PatentSearch API query format, endpoints, or authentication will change after the migration.
+The legacy PatentsView website (`www.patentsview.org`) is migrating to the USPTO Open Data Portal on **March 20, 2026**. The USPTO's [transition guide](https://data.uspto.gov/support/transition-guidance/patentsview) currently covers bulk data download table locations on ODP but does not yet address the PatentSearch API (`search.patentsview.org`). It is not yet clear whether the API query format, endpoints, or authentication will change, or whether the API will simply be retired in favor of ODP endpoints and bulk downloads.
 
-Additionally, the PatentsView team has taken down their community forum and removed the API key request link from patentsview.org. New API keys may still be available via their [Atlassian support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18).
+The PatentsView team has taken down their community forum and removed the API key request link from patentsview.org. New API keys may still be available via their [Atlassian support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18).
 
-**What may break:** `patentsview_search.py` — base URL, query syntax, field names, and API key handling could all change.
+**Impact on this skill:** The PatentsView API key is **optional**. Inventor, assignee, keyword, and patent number searches automatically fall back to the ODP search API when PatentsView is unavailable. CPC classification search, attorney search, and citation network queries require PatentsView and will return a descriptive message if it goes offline. No action is needed — the skill will continue working through the transition.
 
 ### Legacy Office Action APIs → Open Data Portal (in progress)
 
@@ -257,11 +257,10 @@ The following APIs at `developer.uspto.gov` are being migrated to the new Open D
 
 ### Staying Updated
 
-- Check [data.uspto.gov](https://data.uspto.gov) for ODP updates
+- Check [data.uspto.gov/support/transition-guidance/patentsview](https://data.uspto.gov/support/transition-guidance/patentsview) for PatentsView migration updates
+- Check [data.uspto.gov](https://data.uspto.gov) for ODP updates and release notes
 - Check [search.patentsview.org/docs](https://search.patentsview.org/docs/) for PatentsView API status
 - Check [developer.uspto.gov](https://developer.uspto.gov) for legacy API decommission notices
-
-An updated version of this skill targeting the post-migration APIs is planned for release by March 20, 2026.
 
 ## Contributing
 
