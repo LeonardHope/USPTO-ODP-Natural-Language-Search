@@ -237,17 +237,3 @@ Returns the full application object directly (not wrapped in a bag).
 - `429` -- Rate limit exceeded (wait and retry)
 - `500` -- Server error (retry with backoff)
 
----
-
-## Key Differences from PatentsView
-
-| Aspect | ODP File Wrapper | PatentsView |
-|--------|-----------------|-------------|
-| Coverage | All applications (pending + granted) | Granted patents only |
-| Update frequency | Daily | Quarterly |
-| Prosecution docs | Yes (full file wrapper) | No |
-| Continuity data | Yes | No |
-| Assignments | Yes (per-application) | No |
-| Name disambiguation | No | Yes |
-| Analytics-friendly | Limited (free-text only) | Yes (structured queries) |
-| Best for | Specific application lookup | Broad searches, analytics |

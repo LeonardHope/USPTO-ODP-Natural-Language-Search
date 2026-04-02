@@ -1,5 +1,5 @@
 """
-Result formatting utilities for USPTO API responses.
+Result formatting utilities for USPTO ODP API responses.
 
 Converts raw JSON API responses into human-readable text summaries,
 tables, and exportable formats (CSV, JSON).
@@ -12,265 +12,154 @@ them in a scannable format.
 import json
 import csv
 import io
-from typing import Optional
 
 
-def format_patent_list(response: dict, source: str = "patentsview") -> str:
-    """Format a list of patents into a readable summary.
+def format_patent_list(response: dict, source: str = "odp") -> str:
+    """Format a list of patent applications into a readable summary.
 
     Args:
-        response: Raw API response from PatentsView or ODP
-        source: 'patentsview' or 'odp' to determine field names
+        response: Raw API response from ODP patent search
+        source: Always 'odp' (kept for API compatibility)
 
     Returns:
         Formatted text summary
     """
-    # Handle error dicts from fallback failures (PatentsView returns "error": false on success)
     if isinstance(response, dict) and response.get("error"):
-        return response["error"]
+        return str(response["error"])
 
-    lines = []
+    results = response.get("patentFileWrapperDataBag",
+                response.get("results",
+                response if isinstance(response, list) else []))
+    total = response.get("count",
+                response.get("totalCount", len(results))) if isinstance(response, dict) else len(results)
 
-    if source == "patentsview":
-        patents = response.get("patents", [])
-        total = response.get("total_hits", len(patents))
-        count = response.get("count", len(patents))
+    lines = [f"Found {total} applications:\n"]
 
-        lines.append(f"Found {total:,} patents (showing {count}):\n")
+    for i, app in enumerate(results, 1):
+        app_num = app.get("applicationNumberText", "N/A")
+        meta = app.get("applicationMetaData", {})
+        title = meta.get("inventionTitle", app.get("inventionTitle", "No title"))
+        status = meta.get("applicationStatusDescriptionText",
+                    app.get("appStatus", "Unknown"))
+        filing_date = meta.get("filingDate", app.get("filingDate", "N/A"))
+        patent_num = meta.get("patentNumber", app.get("patentNumber", ""))
+        grant_date = meta.get("grantDate", "")
 
-        for i, p in enumerate(patents, 1):
-            pat_id = p.get("patent_id", "N/A")
-            title = p.get("patent_title", "No title")
-            date = p.get("patent_date", "N/A")
-            cited = p.get("patent_num_times_cited_by_us_patents", 0)
+        lines.append(f"  {i}. App {app_num} — {title}")
+        line = f"     Filed: {filing_date} | Status: {status}"
+        if patent_num:
+            line += f" | Patent: US {patent_num}"
+        if grant_date:
+            line += f" | Granted: {grant_date}"
+        lines.append(line)
 
-            lines.append(f"  {i}. US {pat_id} — {title}")
-            lines.append(f"     Granted: {date} | Cited by: {cited} patents")
+        # Show assignee from assignment records if available
+        assignments = app.get("assignmentBag", [])
+        if assignments:
+            latest = assignments[0]
+            assignee_bag = latest.get("assigneeBag", [])
+            if assignee_bag:
+                assignee_name = assignee_bag[0].get("assigneeNameText", "")
+                if assignee_name:
+                    lines.append(f"     Assignee: {assignee_name}")
 
-            # Assignee info — check nested array first, then flat field
-            assignees = p.get("assignees", [])
-            if assignees:
-                assignee = assignees[0].get("assignee_organization", "")
-            else:
-                assignee = p.get("assignee_organization")
-            if assignee:
-                lines.append(f"     Assignee: {assignee}")
+        # Show applicant from metadata
+        applicants = meta.get("applicantBag", [])
+        if applicants and not assignments:
+            names = [a.get("applicantNameText", "") for a in applicants if a.get("applicantNameText")]
+            if names:
+                lines.append(f"     Applicant: {', '.join(names)}")
 
-            # Inventor info — check nested array first, then flat fields
-            inventors = p.get("inventors", [])
-            if inventors:
-                inv_first = inventors[0].get("inventor_name_first", "")
-                inv_last = inventors[0].get("inventor_name_last", "")
-            else:
-                inv_first = p.get("inventor_name_first")
-                inv_last = p.get("inventor_name_last")
-            if inv_first and inv_last:
-                lines.append(f"     Inventor: {inv_first} {inv_last}")
+        # Show CPC if available
+        cpc = meta.get("cpcClassificationBag", [])
+        if cpc:
+            cpc_codes = list(set(str(c) for c in cpc[:3]))
+            if cpc_codes:
+                lines.append(f"     CPC: {', '.join(cpc_codes)}")
 
-            lines.append("")
-
-    elif source == "odp":
-        # Handle both old format (results[]) and new format (patentFileWrapperDataBag[])
-        results = response.get("patentFileWrapperDataBag",
-                    response.get("results",
-                    response if isinstance(response, list) else []))
-        total = response.get("count",
-                    response.get("totalCount", len(results))) if isinstance(response, dict) else len(results)
-
-        lines.append(f"Found {total} applications:\n")
-
-        for i, app in enumerate(results, 1):
-            app_num = app.get("applicationNumberText", "N/A")
-            meta = app.get("applicationMetaData", {})
-            title = meta.get("inventionTitle", app.get("inventionTitle", "No title"))
-            status = meta.get("applicationStatusDescriptionText",
-                        app.get("appStatus", "Unknown"))
-            filing_date = meta.get("filingDate", app.get("filingDate", "N/A"))
-            patent_num = meta.get("patentNumber", app.get("patentNumber", ""))
-
-            lines.append(f"  {i}. App {app_num} — {title}")
-            line = f"     Filed: {filing_date} | Status: {status}"
-            if patent_num:
-                line += f" | Patent: US {patent_num}"
-            lines.append(line)
-
-            # Show assignee from assignment records if available
-            assignments = app.get("assignmentBag", [])
-            if assignments:
-                # Use the most recent assignment's assignee
-                latest = assignments[0]
-                assignee_bag = latest.get("assigneeBag", [])
-                if assignee_bag:
-                    assignee_name = assignee_bag[0].get("assigneeNameText", "")
-                    if assignee_name:
-                        lines.append(f"     Assignee: {assignee_name}")
-
-            lines.append("")
+        lines.append("")
 
     return "\n".join(lines)
 
 
-def format_patent_detail(patent: dict, source: str = "patentsview") -> str:
-    """Format detailed information about a single patent.
+def format_patent_detail(patent: dict, source: str = "odp") -> str:
+    """Format detailed information about a single patent application.
 
     Args:
-        patent: Single patent record
-        source: 'patentsview' or 'odp'
+        patent: Single application record or response wrapper
+        source: Always 'odp' (kept for API compatibility)
 
     Returns:
         Detailed formatted summary
     """
-    lines = []
-
-    # Handle error dicts from fallback failures (PatentsView returns "error": false on success)
     if isinstance(patent, dict) and patent.get("error"):
-        return patent["error"]
+        return str(patent["error"])
 
-    if source == "patentsview":
-        # Handle response wrapper
-        if "patents" in patent:
-            patents = patent["patents"]
-            if not patents:
-                return "No patent found."
-            patent = patents[0]
+    # Unwrap response envelope if needed
+    if "patentFileWrapperDataBag" in patent:
+        bags = patent["patentFileWrapperDataBag"]
+        if not bags:
+            return "No patent found."
+        patent = bags[0]
 
-        lines.append(f"US Patent {patent.get('patent_id', 'N/A')}")
-        lines.append(f"{'=' * 50}")
-        lines.append(f"Title:    {patent.get('patent_title', 'N/A')}")
-        lines.append(f"Granted:  {patent.get('patent_date', 'N/A')}")
-        lines.append(f"Type:     {patent.get('patent_type', 'N/A')}")
-        abstract = patent.get('patent_abstract', 'N/A') or 'N/A'
-        if len(abstract) > 300:
-            truncated = abstract[:300].rsplit(' ', 1)[0]
-            abstract = truncated + "..."
-        lines.append(f"Abstract: {abstract}")
-        lines.append(f"")
+    meta = patent.get("applicationMetaData", {})
+    app_num = patent.get("applicationNumberText", "N/A")
+    patent_num = meta.get("patentNumber", "")
+    title = meta.get("inventionTitle", "N/A")
+    status = meta.get("applicationStatusDescriptionText", "N/A")
+    filing_date = meta.get("filingDate", "N/A")
+    grant_date = meta.get("grantDate", "N/A")
+    app_type = meta.get("applicationTypeCategory",
+                  meta.get("applicationTypeLabelName", "N/A"))
+    examiner = meta.get("examinerNameText", "")
+    art_unit = meta.get("groupArtUnitNumber", "")
 
-        # Assignee — nested array
-        assignees = patent.get("assignees", [])
-        if assignees:
-            assignee_names = [a.get("assignee_organization", "Unknown")
-                              for a in assignees if a.get("assignee_organization")]
-            if assignee_names:
-                lines.append(f"Assignee:           {', '.join(assignee_names)}")
+    header = f"US Patent {patent_num}" if patent_num else f"Application {app_num}"
+    lines = [header, "=" * 50]
+    lines.append(f"Title:    {title}")
+    lines.append(f"Status:   {status}")
+    lines.append(f"Filed:    {filing_date}")
+    if patent_num:
+        lines.append(f"Granted:  {grant_date}")
+        lines.append(f"Patent:   US {patent_num}")
+    lines.append(f"App No:   {app_num}")
+    lines.append(f"Type:     {app_type}")
+    if examiner:
+        lines.append(f"Examiner: {examiner}")
+    if art_unit:
+        lines.append(f"Art Unit: {art_unit}")
 
-        # Inventors — nested array
-        inventors = patent.get("inventors", [])
-        if inventors:
-            inv_names = [f"{inv.get('inventor_name_first', '')} {inv.get('inventor_name_last', '')}".strip()
-                         for inv in inventors[:5]]
-            if inv_names:
-                inv_str = ", ".join(inv_names)
-                if len(inventors) > 5:
-                    inv_str += f" (+{len(inventors) - 5} more)"
-                lines.append(f"Inventors:          {inv_str}")
+    # Applicant info
+    applicants = meta.get("applicantBag", [])
+    if applicants:
+        names = [a.get("applicantNameText", "") for a in applicants if a.get("applicantNameText")]
+        if names:
+            lines.append(f"")
+            lines.append(f"Applicant:          {', '.join(names)}")
 
-        # CPC — nested array
-        cpc_current = patent.get("cpc_current", [])
-        if cpc_current:
-            cpc_codes = list(set(c.get("cpc_subclass_id", c.get("cpc_group_id", ""))
-                                 for c in cpc_current[:5]))
-            if cpc_codes:
-                lines.append(f"CPC:                {', '.join(cpc_codes)}")
+    # Inventor info
+    inventors = meta.get("inventorBag", [])
+    if inventors:
+        inv_names = [inv.get("inventorNameText", "").strip() for inv in inventors[:5]]
+        inv_names = [n for n in inv_names if n]
+        if inv_names:
+            inv_str = ", ".join(inv_names)
+            if len(inventors) > 5:
+                inv_str += f" (+{len(inventors) - 5} more)"
+            lines.append(f"Inventors:          {inv_str}")
 
-        lines.append(f"")
-        lines.append(f"Citations made:     {patent.get('patent_num_us_patents_cited', 'N/A')}")
-        lines.append(f"Times cited by:     {patent.get('patent_num_times_cited_by_us_patents', 'N/A')}")
-        lines.append(f"Processing days:    {patent.get('patent_processing_days', 'N/A')}")
-
-    elif source == "odp":
-        # Handle ODP application data (from get_application_by_patent_number)
-        if "patentFileWrapperDataBag" in patent:
-            bags = patent["patentFileWrapperDataBag"]
-            if not bags:
-                return "No patent found."
-            patent = bags[0]
-
-        meta = patent.get("applicationMetaData", {})
-        app_num = patent.get("applicationNumberText", "N/A")
-        patent_num = meta.get("patentNumber", "")
-        title = meta.get("inventionTitle", "N/A")
-        status = meta.get("applicationStatusDescriptionText", "N/A")
-        filing_date = meta.get("filingDate", "N/A")
-        grant_date = meta.get("grantDate", "N/A")
-        app_type = meta.get("applicationTypeCategory", "N/A")
-
-        header = f"US Patent {patent_num}" if patent_num else f"Application {app_num}"
-        lines.append(header)
-        lines.append(f"{'=' * 50}")
-        lines.append(f"Title:    {title}")
-        lines.append(f"Status:   {status}")
-        lines.append(f"Filed:    {filing_date}")
-        if patent_num:
-            lines.append(f"Granted:  {grant_date}")
-            lines.append(f"Patent:   US {patent_num}")
-        lines.append(f"App No:   {app_num}")
-        lines.append(f"Type:     {app_type}")
-
-        # Applicant/assignee info
-        applicants = meta.get("applicantBag", [])
-        if applicants:
-            names = [a.get("applicantNameText", "") for a in applicants if a.get("applicantNameText")]
-            if names:
-                lines.append(f"")
-                lines.append(f"Applicant:          {', '.join(names)}")
-
-        # Inventor info
-        inventors = meta.get("inventorBag", [])
-        if inventors:
-            inv_names = [f"{inv.get('inventorNameText', '')}".strip() for inv in inventors[:5]]
-            inv_names = [n for n in inv_names if n]
-            if inv_names:
-                inv_str = ", ".join(inv_names)
-                if len(inventors) > 5:
-                    inv_str += f" (+{len(inventors) - 5} more)"
-                lines.append(f"Inventors:          {inv_str}")
-
-    return "\n".join(lines)
-
-
-def format_citation_list(response: dict, direction: str = "forward") -> str:
-    """Format patent citation data.
-
-    Args:
-        response: Citation API response
-        direction: 'forward' (patents this one cites) or 'backward'/'cited_by' (patents citing this one)
-
-    Returns:
-        Formatted citation list
-    """
-    # Handle error dicts from fallback failures (PatentsView returns "error": false on success)
-    if isinstance(response, dict) and response.get("error"):
-        return response["error"]
-
-    citations = response.get("us_patent_citations", [])
-    total = response.get("total_hits", len(citations))
-
-    if direction == "forward":
-        label = "Patents cited by this patent"
-    else:  # "backward" or "cited_by"
-        label = "Patents that cite this patent"
-
-    lines = [f"{label} ({total} total):\n"]
-
-    for i, c in enumerate(citations, 1):
-        citing = c.get("patent_id", "N/A")
-        cited = c.get("citation_patent_id", "N/A")
-        category = c.get("citation_category", "")
-        date = c.get("citation_date", "")
-
-        if direction == "forward":
-            lines.append(f"  {i}. US {cited} ({category}) — {date}")
-        else:
-            lines.append(f"  {i}. Cited by US {citing} — {date}")
+    # CPC classifications
+    cpc = meta.get("cpcClassificationBag", [])
+    if cpc:
+        cpc_codes = list(set(str(c) for c in cpc[:5]))
+        if cpc_codes:
+            lines.append(f"CPC:                {', '.join(cpc_codes)}")
 
     return "\n".join(lines)
 
 
 def format_ptab_results(response: dict) -> str:
     """Format PTAB proceeding search results.
-
-    Handles both old format (results[]) and ODP format (patentTrialProceedingDataBag[]).
 
     Args:
         response: PTAB API response
@@ -282,18 +171,20 @@ def format_ptab_results(response: dict) -> str:
         proceedings = response
     elif isinstance(response, dict):
         proceedings = (response.get("patentTrialProceedingDataBag", [])
+                       or response.get("patentTrialDecisionDataBag", [])
+                       or response.get("patentTrialDocumentDataBag", [])
+                       or response.get("patentAppealDataBag", [])
                        or response.get("results", []))
     else:
         proceedings = []
 
     total = response.get("count", response.get("totalCount", len(proceedings))) if isinstance(response, dict) else len(proceedings)
 
-    lines = [f"PTAB Proceedings ({total} found):\n"]
+    lines = [f"PTAB Results ({total} found):\n"]
 
     for i, p in enumerate(proceedings, 1):
-        trial_num = p.get("trialNumber", "N/A")
+        trial_num = p.get("trialNumber", p.get("appealNumber", p.get("interferenceNumber", "N/A")))
 
-        # Handle nested ODP format
         trial_meta = p.get("trialMetaData", {})
         patent_data = p.get("patentOwnerData", {})
         petitioner_data = p.get("regularPetitionerData", {})
@@ -318,21 +209,17 @@ def format_ptab_results(response: dict) -> str:
 def format_assignment_results(response: dict) -> str:
     """Format patent assignment search results.
 
-    Handles both old format (results[]) and ODP format (patentFileWrapperDataBag[]).
-
     Args:
         response: Assignment API response
 
     Returns:
         Formatted assignment list showing ownership chain
     """
-    # Extract assignments from various response formats
     assignments = []
 
     if isinstance(response, list):
         assignments = response
     elif isinstance(response, dict):
-        # ODP format: patentFileWrapperDataBag[].assignmentBag[]
         bags = response.get("patentFileWrapperDataBag", [])
         if bags:
             app_num = ""
@@ -341,10 +228,8 @@ def format_assignment_results(response: dict) -> str:
                 for a in bag.get("assignmentBag", []):
                     a["_applicationNumber"] = app_num
                     assignments.append(a)
-        # Direct assignments list (from company/recent search)
         elif "assignments" in response:
             assignments = response["assignments"]
-        # Old format fallback
         else:
             assignments = response.get("results", [])
 
@@ -361,12 +246,10 @@ def format_assignment_results(response: dict) -> str:
         return "\n".join(lines)
 
     for i, a in enumerate(assignments, 1):
-        # ODP format fields
         reel_frame = a.get("reelAndFrameNumber", a.get("reelFrame", "N/A"))
         recorded = a.get("assignmentRecordedDate", a.get("recordedDate", "N/A"))
         conveyance = a.get("conveyanceText", "N/A")
 
-        # ODP nested assignor/assignee bags
         assignor_bag = a.get("assignorBag", [])
         assignee_bag = a.get("assigneeBag", [])
         assignor = assignor_bag[0].get("assignorName", "N/A") if assignor_bag else a.get("assignorName", "N/A")
@@ -392,7 +275,7 @@ def format_rejection_results(response: dict) -> str:
     """Format office action rejection results.
 
     Args:
-        response: Rejection API response
+        response: Rejection API response (DSAPI format)
 
     Returns:
         Formatted rejection summary
@@ -407,12 +290,10 @@ def format_rejection_results(response: dict) -> str:
         action_type = r.get("actionTypeCategory", "")
         doc_code = r.get("legacyDocumentCodeIdentifier", "")
         action_date = r.get("submissionDate", "N/A")
-        # Clean datetime format to date only
         if action_date and "T" in str(action_date):
             action_date = str(action_date).split("T")[0]
         art_unit = r.get("groupArtUnitNumber", "")
 
-        # Build rejection type string
         rej_types = []
         if r.get("hasRej101") or r.get("aliceIndicator") or r.get("mayoIndicator"):
             rej_types.append("101")
@@ -432,6 +313,36 @@ def format_rejection_results(response: dict) -> str:
         lines.append(f"     Rejection basis: {rej_str}")
         if art_unit:
             lines.append(f"     Art Unit: {art_unit}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_petition_results(response: dict) -> str:
+    """Format petition decision results.
+
+    Args:
+        response: Petition Decisions API response
+
+    Returns:
+        Formatted petition decisions list
+    """
+    decisions = response.get("petitionDecisionDataBag", [])
+    total = response.get("count", len(decisions))
+
+    lines = [f"Petition Decisions ({total} found):\n"]
+
+    for i, d in enumerate(decisions, 1):
+        record_id = d.get("petitionDecisionRecordIdentifier", "N/A")
+        app_num = d.get("applicationNumberText", "N/A")
+        decision_date = d.get("decisionDate", "N/A")
+        decision_type = d.get("decisionTypeCategory", "N/A")
+        petition_type = d.get("petitionTypeCategory", "N/A")
+
+        lines.append(f"  {i}. {record_id}")
+        lines.append(f"     App: {app_num} | Date: {decision_date}")
+        lines.append(f"     Petition Type: {petition_type}")
+        lines.append(f"     Decision: {decision_type}")
         lines.append("")
 
     return "\n".join(lines)
@@ -473,20 +384,3 @@ def to_json(records: list, pretty: bool = True) -> str:
         JSON string
     """
     return json.dumps(records, indent=2 if pretty else None)
-
-
-if __name__ == "__main__":
-    # Quick test with sample data
-    sample = {
-        "patents": [
-            {
-                "patent_id": "10000000",
-                "patent_title": "Coherent LADAR using intra-pixel quadrature detection",
-                "patent_date": "2018-06-19",
-                "patent_num_times_cited_by_us_patents": 42,
-            }
-        ],
-        "count": 1,
-        "total_hits": 1,
-    }
-    print(format_patent_list(sample))

@@ -6,12 +6,10 @@ Useful for chain-of-title analysis, due diligence, and M&A work.
 
 Assignment data is accessed via the ODP File Wrapper API:
     GET /api/v1/patent/applications/{applicationNumber}/assignment
-Auth: USPTO_ODP_API_KEY env var
-Rate limit: 60 requests/minute
+Auth: USPTO_ODP_API_KEY env var, sent as X-API-KEY header
 
-Note: The old Assignment Search API (assignment-api.uspto.gov) has been
-decommissioned. The ODP endpoint only supports per-application lookups,
-so patent number queries first resolve to an application number.
+The ODP endpoint only supports per-application lookups, so patent number
+queries first resolve to an application number via ODP search.
 """
 
 import json
@@ -19,7 +17,7 @@ import logging
 import sys
 import argparse
 
-from uspto_client import get_client, APIError, resolve_patent_to_app_number
+from uspto_client import get_client, APIError, resolve_patent_to_app_number, clean_app_number
 from format_results import format_assignment_results
 
 logger = logging.getLogger("assignment_search")
@@ -37,7 +35,7 @@ def get_assignments_for_application(application_number: str) -> dict:
         API response with assignment records
     """
     client = get_client()
-    clean = application_number.replace("/", "").replace(",", "").strip()
+    clean = clean_app_number(application_number)
     return client.odp_get(f"/api/v1/patent/applications/{clean}/assignment")
 
 
@@ -90,7 +88,7 @@ def search_patent_assignments(patent_number: str = None,
     # Resolve application number
     app_num = None
     if application_number:
-        app_num = application_number.replace("/", "").replace(",", "").strip()
+        app_num = clean_app_number(application_number)
     elif patent_number:
         app_num = resolve_patent_to_app_number(patent_number)
         if not app_num:

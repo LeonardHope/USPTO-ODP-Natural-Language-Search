@@ -1,18 +1,20 @@
 """
 USPTO API Client - Shared authentication, rate limiting, and retry logic.
 
-This module provides a unified client for all USPTO APIs:
-- PatentsView PatentSearch API
-- USPTO Open Data Portal (ODP) APIs
-- Legacy Developer Portal APIs (Office Actions, Assignments)
+This module provides a unified client for all USPTO Open Data Portal APIs:
+- Patent File Wrapper API (search, sub-resources)
+- PTAB Trials, Appeals, Interferences APIs
+- Petition Decisions API
+- Office Action DSAPI (Rejections, Citations, Text, Enriched Citations)
+- Bulk Datasets API
+- TSDR (Trademark Status & Document Retrieval) API
 
 API keys are loaded from a .env file in the project root (via python-dotenv)
 or from environment variables. They are never logged, printed, or stored in
 source code.
 
 Environment variables / .env keys:
-    USPTO_ODP_API_KEY       - Key for Open Data Portal APIs
-    PATENTSVIEW_API_KEY     - Key for PatentsView PatentSearch API
+    USPTO_ODP_API_KEY       - Key for all ODP and TSDR APIs
 """
 
 import os
@@ -72,30 +74,28 @@ class APIError(Exception):
 
 
 class USPTOClient:
-    """Unified client for all USPTO APIs.
+    """Unified client for all USPTO Open Data Portal APIs.
 
     Handles authentication, rate limiting, and retries for:
-    - PatentsView (search.patentsview.org)
-    - Open Data Portal (data.uspto.gov)
-    - Legacy Developer APIs (developer.uspto.gov)
+    - Open Data Portal (api.uspto.gov) — Patent File Wrapper, PTAB, Petitions,
+      Office Actions, Bulk Data
+    - TSDR (tsdrapi.uspto.gov) — Trademark Status & Document Retrieval
     """
 
     # Base URLs
-    PATENTSVIEW_BASE = "https://search.patentsview.org/api/v1"
     ODP_BASE = "https://api.uspto.gov"
-    LEGACY_BASE = "https://developer.uspto.gov/ds-api"
+    TSDR_BASE = "https://tsdrapi.uspto.gov"
 
-    # Rate limits per API (requests per minute)
+    # Rate limits — ODP uses burst:1 (no parallel requests) and weekly caps.
+    # We enforce per-minute limits that stay well within the weekly caps.
     RATE_LIMITS = {
-        "patentsview": 45,
-        "odp": 60,
-        "odp_download": 4,  # PDF/ZIP downloads are heavily rate-limited
-        "legacy": 60,
+        "odp": 30,            # Meta data calls — conservative to stay within burst:1
+        "odp_download": 4,    # PDF/ZIP downloads are heavily rate-limited
+        "tsdr": 30,           # TSDR API
     }
 
     def __init__(self):
         self.odp_key = os.environ.get("USPTO_ODP_API_KEY", "")
-        self.pv_key = os.environ.get("PATENTSVIEW_API_KEY", "")
 
         self._limiters = {
             name: RateLimiter(limit) for name, limit in self.RATE_LIMITS.items()
@@ -103,23 +103,10 @@ class USPTOClient:
         self._session = requests.Session()
         self._session.headers.update({
             "Accept": "application/json",
-            "User-Agent": "uspto-patent-search-skill/1.0",
+            "User-Agent": "uspto-odp-search-skill/2.0",
         })
 
     # ── Credential checks ──────────────────────────────────────────────
-
-    @property
-    def has_patentsview_key(self) -> bool:
-        """Check if a PatentsView API key is configured (without raising)."""
-        return bool(self.pv_key)
-
-    def require_patentsview_key(self):
-        if not self.pv_key:
-            raise APIError(
-                "PATENTSVIEW_API_KEY is not set.\n"
-                "PatentsView features will fall back to ODP where possible.\n"
-                "To get a key, try: https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18"
-            )
 
     def require_odp_key(self):
         if not self.odp_key:
@@ -139,18 +126,20 @@ class USPTOClient:
         params: dict = None,
         json_body: dict = None,
         data: dict = None,
+        headers: dict = None,
         max_retries: int = 3,
         timeout: int = 30,
     ) -> dict:
         """Make an authenticated, rate-limited request with retry logic.
 
         Args:
-            api: One of 'patentsview', 'odp', 'legacy', 'assignment'
+            api: One of 'odp', 'odp_download', 'tsdr'
             method: 'GET' or 'POST'
             url: Full request URL
             params: Query parameters
             json_body: JSON request body (for POST with JSON)
             data: Form-encoded body (for POST with form data)
+            headers: Additional headers to merge
             max_retries: Number of retries on transient errors
             timeout: Request timeout in seconds
 
@@ -160,14 +149,16 @@ class USPTOClient:
         Raises:
             APIError: If the request fails after all retries
         """
+        self.require_odp_key()
+
         # Set auth header based on API
-        headers = {}
-        if api == "patentsview":
-            self.require_patentsview_key()
-            headers["X-Api-Key"] = self.pv_key
-        elif api in ("odp", "odp_download", "legacy"):
-            self.require_odp_key()
-            headers["X-Api-Key"] = self.odp_key
+        req_headers = {}
+        if api == "tsdr":
+            req_headers["USPTO-API-KEY"] = self.odp_key
+        else:
+            req_headers["X-API-KEY"] = self.odp_key
+        if headers:
+            req_headers.update(headers)
 
         limiter = self._limiters.get(api)
 
@@ -183,11 +174,14 @@ class USPTOClient:
                     params=params,
                     json=json_body,
                     data=data,
-                    headers=headers,
+                    headers=req_headers,
                     timeout=timeout,
                 )
 
                 if resp.status_code == 200:
+                    content_type = resp.headers.get("Content-Type", "")
+                    if "xml" in content_type:
+                        return {"raw_xml": resp.text, "status_code": 200}
                     try:
                         return resp.json()
                     except json.JSONDecodeError:
@@ -228,91 +222,53 @@ class USPTOClient:
 
         raise APIError(f"Request failed after {max_retries} attempts. Last error: {last_error}")
 
-    # ── PatentsView convenience methods ─────────────────────────────────
-
-    def patentsview_get(self, endpoint: str, q: dict, f: list = None,
-                        s: list = None, o: dict = None) -> dict:
-        """Query the PatentsView API.
-
-        Args:
-            endpoint: e.g. 'patent', 'inventor', 'assignee', 'patent/us_patent_citation'
-            q: Query dict using PatentsView operators (_eq, _contains, _text_any, etc.)
-            f: List of fields to return
-            s: Sort specification, e.g. [{"patent_date": "desc"}]
-            o: Options dict, e.g. {"size": 25}
-
-        Returns:
-            API response dict with results
-        """
-        url = f"{self.PATENTSVIEW_BASE}/{endpoint}/"
-        params = {"q": json.dumps(q)}
-        if f:
-            params["f"] = json.dumps(f)
-        if s:
-            params["s"] = json.dumps(s)
-        if o:
-            params["o"] = json.dumps(o)
-        return self._request("patentsview", "GET", url, params=params)
-
-    def patentsview_post(self, endpoint: str, body: dict) -> dict:
-        """POST to PatentsView API (for complex queries)."""
-        url = f"{self.PATENTSVIEW_BASE}/{endpoint}/"
-        return self._request("patentsview", "POST", url, json_body=body)
-
     # ── ODP convenience methods ─────────────────────────────────────────
 
     def odp_get(self, path: str, params: dict = None) -> dict:
-        """Query the Open Data Portal API.
+        """Query the Open Data Portal API (GET).
 
         Args:
-            path: API path, e.g. '/api/v1/patent/application/16123456'
+            path: API path, e.g. '/api/v1/patent/applications/16123456'
             params: Query parameters
         """
         url = f"{self.ODP_BASE}{path}"
         return self._request("odp", "GET", url, params=params)
 
     def odp_post(self, path: str, json_body: dict = None, data: dict = None) -> dict:
-        """POST to Open Data Portal API."""
+        """POST to Open Data Portal API.
+
+        Args:
+            path: API path
+            json_body: JSON request body
+            data: Form-encoded body (for DSAPI endpoints)
+        """
         url = f"{self.ODP_BASE}{path}"
         return self._request("odp", "POST", url, json_body=json_body, data=data)
 
-    # ── Legacy Developer API convenience methods ────────────────────────
+    # ── TSDR convenience methods ────────────────────────────────────────
 
-    def legacy_post(self, dataset: str, version: str, criteria: str,
-                    start: int = 0, rows: int = 100) -> dict:
-        """Query a Legacy Developer Portal API using Lucene syntax.
+    def tsdr_get(self, path: str, params: dict = None) -> dict:
+        """Query the TSDR (Trademark) API.
 
         Args:
-            dataset: e.g. 'oa_actions', 'oa_rejections', 'enriched_cited_reference_metadata'
-            version: e.g. 'v1', 'v2', '1'
-            criteria: Lucene query string, e.g. 'patent_number:7123456'
-            start: Starting record offset
-            rows: Number of records to return (max varies by API)
+            path: API path, e.g. '/ts/cd/casestatus/sn88123456/info'
+            params: Query parameters
         """
-        url = f"{self.LEGACY_BASE}/{dataset}/{version}/records"
-        form_data = {
-            "criteria": criteria,
-            "start": str(start),
-            "rows": str(rows),
-        }
-        return self._request("legacy", "POST", url, data=form_data)
-
-    def legacy_get_fields(self, dataset: str, version: str) -> dict:
-        """Get available searchable fields for a Legacy API dataset."""
-        url = f"{self.LEGACY_BASE}/{dataset}/{version}/fields"
-        return self._request("legacy", "GET", url)
+        url = f"{self.TSDR_BASE}{path}"
+        return self._request("tsdr", "GET", url, params=params)
 
     # ── File download ──────────────────────────────────────────────────
 
-    def download_file(self, url: str, dest_path: str, max_retries: int = 3,
-                      timeout: int = 120) -> bool:
-        """Download a file from the ODP API with authentication and rate limiting.
+    def download_file(self, url: str, dest_path: str, api: str = "odp_download",
+                      max_retries: int = 3, timeout: int = 120) -> bool:
+        """Download a file with authentication and rate limiting.
 
         Uses the odp_download rate limiter (4 req/min) for PDF/ZIP downloads.
 
         Args:
             url: Full download URL
             dest_path: Local file path to write to
+            api: Rate limiter to use ('odp_download' or 'tsdr')
             max_retries: Number of retries on transient errors
             timeout: Request timeout in seconds
 
@@ -323,11 +279,12 @@ class USPTOClient:
             APIError: If the download fails after all retries
         """
         self.require_odp_key()
-        headers = {
-            "X-Api-Key": self.odp_key,
-            "Accept": "application/pdf",
-        }
-        limiter = self._limiters.get("odp_download")
+        headers = {"Accept": "application/pdf"}
+        if api == "tsdr":
+            headers["USPTO-API-KEY"] = self.odp_key
+        else:
+            headers["X-API-KEY"] = self.odp_key
+        limiter = self._limiters.get(api, self._limiters.get("odp_download"))
 
         last_error = None
         for attempt in range(max_retries):
@@ -389,7 +346,6 @@ class USPTOClient:
         """
         return {
             "odp_key_set": bool(self.odp_key),
-            "patentsview_key_set": bool(self.pv_key),
         }
 
 
@@ -400,10 +356,8 @@ def _run_setup_wizard():
     if not setup_script.exists():
         return False
     print("\nAPI keys not configured. Launching setup wizard...\n")
-    # Use the system python (not venv) so the wizard can bootstrap the venv itself
     result = subprocess.run([sys.executable, str(setup_script)])
     if result.returncode == 0:
-        # Reload .env after wizard completes
         try:
             from dotenv import load_dotenv
             load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=True)
@@ -411,6 +365,28 @@ def _run_setup_wizard():
             pass
         return True
     return False
+
+
+def clean_patent_number(patent_number: str) -> str:
+    """Clean a patent number to digits only (or with prefix for design/reissue).
+
+    Accepts: '10,000,000', 'US10000000', 'US 10,000,000', 'RE49000', 'D900000'
+    Returns: '10000000', 'RE49000', 'D900000'
+    """
+    s = patent_number.strip()
+    if s.upper().startswith("US"):
+        s = s[2:].strip()
+    s = s.replace(",", "")
+    return s
+
+
+def clean_app_number(application_number: str) -> str:
+    """Clean an application number to digits only.
+
+    Accepts: '16/123,456', '16123456', '16,123,456'
+    Returns: '16123456'
+    """
+    return application_number.replace("/", "").replace(",", "").replace(" ", "").strip()
 
 
 def resolve_patent_to_app_number(patent_number: str) -> str:
@@ -423,13 +399,13 @@ def resolve_patent_to_app_number(patent_number: str) -> str:
         Application number string, or None if not found
     """
     client = get_client()
-    clean = patent_number.replace(",", "").replace("US", "").strip()
+    clean = clean_patent_number(patent_number)
     try:
         result = client.odp_get(
             "/api/v1/patent/applications/search",
-            params={"q": clean, "rows": 5}
+            params={"q": clean, "limit": 5}
         )
-        apps = result.get("patentFileWrapperDataBag", result.get("results", []))
+        apps = result.get("patentFileWrapperDataBag", [])
         for app in apps:
             meta = app.get("applicationMetaData", {})
             if meta.get("patentNumber") == clean:
@@ -445,12 +421,11 @@ def resolve_patent_to_app_number(patent_number: str) -> str:
     return None
 
 
-def get_client() -> USPTOClient:
+def get_client() -> 'USPTOClient':
     """Get a configured USPTOClient instance.
 
     On first use, if the ODP key is missing and stdin is interactive,
-    automatically launches the setup wizard. The PatentsView key is
-    optional — functions fall back to ODP when it's not available.
+    automatically launches the setup wizard.
     """
     client = USPTOClient()
     status = client.check_keys()
@@ -466,12 +441,7 @@ if __name__ == "__main__":
     print("API Key Status:")
     for key, is_set in status.items():
         icon = "OK" if is_set else "MISSING"
-        label = key
-        if key == "patentsview_key_set":
-            label += " (optional)"
-        print(f"  {label}: {icon}")
+        print(f"  {key}: {icon}")
     if not status["odp_key_set"]:
         print("\n[SETUP_REQUIRED] Run: python3 get_started.py")
         sys.exit(1)
-    if not status["patentsview_key_set"]:
-        print("\nNote: PatentsView key is optional. Searches will use ODP where possible.")

@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "Locate all patents assigned to a company called Atari or similar. I'm not sure of the exact company name.",
-      "expected_output": "Should use PatentsView search_by_assignee with fuzzy matching, try variations of the name, and return a list of patents with titles, dates, and assignee names.",
+      "expected_output": "Should use patent_search.search_by_assignee with fuzzy matching, try variations of the name, and return a list of patents with titles, dates, and assignee names.",
       "files": []
     },
     {
@@ -28,7 +28,7 @@
     {
       "id": 5,
       "prompt": "Find the most cited patents in the machine learning space from the last 5 years.",
-      "expected_output": "Should use PatentsView keyword search with text operators on title/abstract, filter by year, sort by citation count descending, and present top results.",
+      "expected_output": "Should use patent_search.search_by_keyword with text operators on title/abstract, filter by year, sort by citation count descending, and present top results.",
       "files": []
     },
     {
@@ -40,7 +40,7 @@
     {
       "id": 7,
       "prompt": "Tell me everything about patent 11,234,567 — basic info, who owns it, any PTAB challenges, and its prosecution history.",
-      "expected_output": "Should chain multiple API calls: PatentsView for basic info and citations, Assignments for ownership, PTAB for challenges, ODP for prosecution documents. Should present a comprehensive summary.",
+      "expected_output": "Should chain multiple API calls: patent_search for basic info and citations, Assignments for ownership, PTAB for challenges, ODP for prosecution documents. Should present a comprehensive summary.",
       "files": []
     }
   ]

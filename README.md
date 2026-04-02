@@ -1,56 +1,75 @@
-# USPTO Patent Search Skill
+# USPTO Open Data Portal Search Skill
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [Cowork](https://claude.ai) skill that provides a unified, natural-language interface to all major USPTO patent APIs. Ask questions in plain English — the skill handles API selection, query construction, and result formatting automatically.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill that provides natural-language access to all USPTO Open Data Portal APIs for patent and trademark data. Ask questions in plain English -- the skill handles API selection, query construction, and result formatting automatically.
 
 ## What It Does
 
 Instead of learning multiple API syntaxes, you can ask things like:
 
-- *"Find all patents assigned to a company called Atari or similar"*
+- *"Find all patents assigned to Tesla"*
 - *"Has patent 10,585,959 been challenged at PTAB?"*
 - *"Show me the prosecution history for application 16/123,456"*
 - *"Who currently owns patent 11,887,351?"*
-- *"What is the current status of application 16/123,456?"*
 - *"What rejections were issued during prosecution of patent 10,000,000?"*
-- *"What patents cite US 10,000,000?"*
-- *"List the key prosecution documents for application 16/123,456"*
-- *"Show me the parent and child applications for 16/538,307"*
-- *"Show me the full text of the office action for patent 10,000,000"*
-- *"What prior art was cited in the office actions for application 15/638,789?"*
-- *"Download the file wrapper for application 16/123,456"*
+- *"What is the status of trademark serial number 88/123,456?"*
+- *"Search for petition decisions about revival"*
+- *"What bulk datasets are available for patent grants?"*
 
 The skill determines which API to query, builds the request, handles authentication and rate limiting, and presents results in a readable format.
 
-## APIs Covered
+## Features
 
-| API | Source | Status | What It Provides |
-|-----|--------|--------|-----------------|
-| **PatentsView PatentSearch** | search.patentsview.org | Migrating to ODP March 20, 2026 | Inventor/assignee/keyword search, citation networks, analytics across granted patents |
-| **ODP Patent File Wrapper** | api.uspto.gov | Stable | Application status, prosecution history documents, continuity data |
-| **ODP PTAB** | api.uspto.gov | Stable | IPR, PGR, CBM trials, appeal decisions |
-| **Office Action Rejection** | developer.uspto.gov | Migrating to ODP | Structured rejection data (101, 102, 103, 112) |
-| **Office Action Text** | developer.uspto.gov | Migrating to ODP | Full text of office actions |
-| **Enriched Citations** | developer.uspto.gov | v3 migrating to ODP; v1/v2 decommissioned | NLP-parsed prior art citations (Oct 2017 – April 2019 only) |
-| **Patent Assignments** | api.uspto.gov (ODP) | Stable | Ownership transfers, chain of title, security interests |
+The skill covers the full breadth of the USPTO Open Data Portal:
 
-## Prerequisites
+### Patent File Wrapper
+- **Search** -- Find patents by assignee, inventor, keyword, CPC classification, examiner, or status
+- **Metadata** -- Application status, filing dates, examiner info
+- **Documents** -- Full prosecution file history (office actions, responses, drawings)
+- **Continuity** -- Parent/child/divisional application chains
+- **Patent Term Adjustment (PTA)** -- Days added/subtracted from patent term
+- **Assignments** -- Ownership records and chain of title
+- **Attorney of Record** -- Current correspondence information
+- **Transactions** -- Complete transaction history for an application
+- **Foreign Priority** -- Foreign priority claims and Paris Convention data
+
+### PTAB (Patent Trial and Appeal Board)
+- **Trial Proceedings** -- IPR, PGR, CBM, and derivation proceedings
+- **Trial Decisions & Documents** -- Board decisions and supporting documents
+- **Appeal Decisions** -- Ex parte appeal outcomes
+- **Interference Decisions** -- Priority contests between applications
+
+### Petition Decisions
+- Search and retrieve petition decisions (revival, extensions of time, prioritized examination, etc.)
+
+### Office Actions (DSAPI)
+- **Rejections** -- Structured rejection data (101, 102, 103, 112) with examiner and art unit
+- **Full Text** -- Complete office action text including examiner amendments
+- **Citations** -- Prior art cited in office actions with NLP-parsed passage references
+
+### Trademark Status & Document Retrieval (TSDR)
+- **Case Status** -- Current trademark status, mark details, ownership
+- **Documents** -- Prosecution documents, registration certificates
+- **Batch Lookup** -- Multiple trademark statuses in one call
+
+### Bulk Data
+- **Dataset Discovery** -- Search and browse available bulk data products
+- **Downloads** -- Patent grants, applications, classifications, assignments in XML/CSV/JSON
+
+## Requirements
 
 - Python 3.8+
-- One free API key (required), one optional (see Setup below)
+- `requests`
+- `python-dotenv`
 
-## Setup
+## Quick Start
 
-### 1. Get API Keys
+### 1. Get Your API Key
 
-**USPTO Open Data Portal key (required):**
+One free API key covers all APIs:
+
 1. Go to [data.uspto.gov/myodp](https://data.uspto.gov/myodp)
 2. Create a USPTO.gov account and verify with ID.me (one-time)
 3. Copy your API key from the My ODP page
-
-**PatentsView key (optional):**
-1. The original key request page at patentsview.org has been removed. Try the [PatentsView support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18) instead.
-2. If that link stops working, PatentsView is migrating to the USPTO Open Data Portal on March 20, 2026 — a single ODP key may cover both APIs after the migration.
-3. **Without a PatentsView key**, inventor/assignee/keyword/patent number searches automatically fall back to the ODP search API. CPC classification search, attorney search, and citation network queries are unavailable without it.
 
 ### 2. Run the Setup Wizard
 
@@ -58,209 +77,217 @@ The skill determines which API to query, builds the request, handles authenticat
 python3 get_started.py
 ```
 
-That's it — the wizard handles everything automatically:
+The wizard handles everything automatically:
 - Creates a Python virtual environment and installs dependencies
-- Prompts for each API key with a link to where you can get it
+- Prompts for your API key with a link to where you can get it
 - Shows a masked preview so you can confirm what you entered
 - Saves everything to a `.env` file (git-ignored, never committed)
 
-On first use, the wizard also launches automatically if keys are not yet configured. You can re-run it anytime to update a key.
+You can re-run `get_started.py` anytime to update your key.
 
-**Alternative — set environment variables** manually in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+### 3. Try a Query
+
 ```bash
-export USPTO_ODP_API_KEY="your_odp_key_here"
-export PATENTSVIEW_API_KEY="your_patentsview_key_here"  # optional
+cd scripts/
+python patent_search.py assignee "Tesla" --limit 10
 ```
 
 ## Installation as a Claude Skill
 
 ### Claude Code
 
-Add the skill directory to your Claude Code configuration by running `/install-skill` from within Claude Code, or by adding the path to your skill settings manually. The skill is activated automatically when Claude detects patent-related queries.
+Add the skill directory to your Claude Code configuration by running `/install-skill` from within Claude Code, or by adding the path to your skill settings manually. The skill activates automatically when Claude detects patent- or trademark-related queries.
 
-### Cowork
+## Module Reference
 
-The skill can be installed through the Cowork plugin system. Place the skill directory where your Cowork session can access it.
+All scripts live in the `scripts/` directory and work both as importable modules and standalone CLI tools.
+
+| Script | Purpose |
+|--------|---------|
+| `uspto_client.py` | Shared client: authentication, rate limiting, retries for all APIs |
+| `patent_search.py` | Patent search by assignee, inventor, keyword, CPC, examiner, status |
+| `file_wrapper.py` | File wrapper sub-resources: metadata, documents, continuity, PTA, assignments, attorney, transactions, foreign priority |
+| `ptab_search.py` | PTAB trials (proceedings, decisions, documents), appeals, interferences |
+| `petition_search.py` | Petition decision search and retrieval |
+| `office_actions_search.py` | Office action rejections, full text, and citations (DSAPI) |
+| `assignment_search.py` | Patent ownership and chain-of-title lookups |
+| `tsdr_search.py` | Trademark status, documents, and batch lookups (TSDR API) |
+| `bulk_data_search.py` | Bulk dataset discovery and download |
+| `download_documents.py` | List and download prosecution file history PDFs |
+| `format_results.py` | JSON-to-human-readable output formatting |
+
+## CLI Examples
+
+All commands are run from the `scripts/` directory.
+
+### Patent Search
+
+```bash
+# Search by assignee
+python patent_search.py assignee "Tesla" --limit 10
+
+# Search by keyword with date filter
+python patent_search.py keyword "autonomous vehicle" --date-from 2020-01-01
+
+# Search by CPC classification
+python patent_search.py cpc H04L
+```
+
+### File Wrapper
+
+```bash
+# Get full application data
+python file_wrapper.py get 16123456
+
+# List prosecution documents
+python file_wrapper.py documents 16123456
+
+# Get continuity (parent/child) data
+python file_wrapper.py continuity 16123456
+```
+
+### PTAB
+
+```bash
+# Search trial proceedings by patent number
+python ptab_search.py proceedings --patent-number 10000000
+
+# Search appeal decisions
+python ptab_search.py appeals --query "claim construction"
+```
+
+### Petition Decisions
+
+```bash
+# Search petition decisions
+python petition_search.py search --query "revival"
+```
+
+### Office Actions
+
+```bash
+# Search rejections by art unit and type
+python office_actions_search.py rejections --art-unit 3689 --type 103
+```
+
+### Assignments
+
+```bash
+# Get assignment chain of title
+python assignment_search.py chain 10000000
+```
+
+### Trademarks (TSDR)
+
+```bash
+# Get trademark status by serial number
+python tsdr_search.py status --serial 88123456
+```
+
+### Bulk Data
+
+```bash
+# Search available bulk datasets
+python bulk_data_search.py search --query "patent grant"
+```
+
+### Document Download
+
+```bash
+# List key prosecution documents
+python download_documents.py list 16123456 --key-only
+```
+
+## Architecture
+
+### Client / Module Structure
+
+All scripts share a common foundation through `uspto_client.py`:
+
+```
+                  ┌─────────────────┐
+                  │  uspto_client.py │
+                  │  (auth, rate     │
+                  │   limits, retry) │
+                  └────────┬────────┘
+                           │
+        ┌──────────┬───────┼───────┬──────────┐
+        │          │       │       │          │
+   patent_    file_    ptab_   office_    tsdr_
+   search    wrapper  search  actions   search
+                                         ...
+        │          │       │       │          │
+        └──────────┴───────┼───────┴──────────┘
+                           │
+                  ┌────────┴────────┐
+                  │ format_results  │
+                  │ (JSON → human-  │
+                  │  readable text) │
+                  └─────────────────┘
+```
+
+- **`USPTOClient`** in `uspto_client.py` handles authentication (API key via `X-Api-Key` or `USPTO-API-KEY` header depending on endpoint), rate limiting (token bucket per API family), and retry logic with exponential backoff.
+- Each module imports `get_client()` to obtain a configured client instance.
+- **`format_results.py`** converts raw API JSON into human-readable output for each data type.
+- Utility functions `clean_patent_number()`, `clean_app_number()`, and `resolve_patent_to_app_number()` in the client handle format normalization so users can input numbers in any common format (`10,000,000`, `US10000000`, `16/123,456`, etc.).
+
+### API Key
+
+A single key (`USPTO_ODP_API_KEY`) from [data.uspto.gov/myodp](https://data.uspto.gov/myodp) covers every API endpoint in the skill, including TSDR (which uses a different HTTP header internally but accepts the same key value).
+
+### Rate Limits
+
+Rate limiting is handled automatically with token bucket algorithms and exponential backoff:
+
+| API Family | Limit | Handling |
+|------------|-------|---------|
+| ODP (Patent, PTAB, Petitions, Bulk Data) | 60 req/min | Auto-wait + retry |
+| ODP PDF/ZIP Downloads | 4 req/min | Auto-wait + retry |
+| DSAPI (Office Actions) | 60 req/min | Auto-wait + retry |
+| TSDR (Trademarks) | 60 req/min | Auto-wait + retry |
 
 ## Project Structure
 
 ```
 uspto-patent-search/
-├── SKILL.md                           # Core skill instructions (Claude reads this)
-├── CLAUDE.md                          # Claude Code project instructions
-├── get_started.py                      # Interactive API key setup (writes .env)
-├── requirements.txt                   # Python dependencies
-├── .env.example                       # Template for API key configuration
+├── SKILL.md                    # Skill instructions (Claude reads this)
+├── CLAUDE.md                   # Claude Code project guidance
+├── get_started.py              # Interactive API key setup
+├── requirements.txt            # Python dependencies
+├── .env.example                # Template for API key configuration
 ├── .gitignore
 ├── README.md
+├── LICENSE
 ├── references/
-│   ├── patentsview-api.md             # PatentsView query language, fields, endpoints
-│   ├── odp-file-wrapper-api.md        # ODP application search and document retrieval
-│   ├── ptab-api.md                    # PTAB proceedings and decisions
-│   ├── office-actions-api.md          # Office action rejections, citations, text (Lucene)
-│   ├── assignment-api.md              # Patent assignment / ownership records
-│   └── setup-and-auth.md             # Detailed setup instructions and troubleshooting
+│   ├── odp-api-complete-reference.md
+│   ├── odp-file-wrapper-api.md
+│   ├── ptab-api.md
+│   ├── office-actions-api.md
+│   ├── assignment-api.md
+│   └── setup-and-auth.md
 ├── scripts/
-│   ├── uspto_client.py                # Shared client: auth, rate limiting, retries
-│   ├── patentsview_search.py          # PatentsView API search functions
-│   ├── odp_search.py                  # ODP File Wrapper + PTAB queries
-│   ├── office_actions_search.py       # Legacy Office Action APIs (Lucene queries)
-│   ├── assignment_search.py           # Patent assignment / ownership lookups
-│   ├── download_documents.py          # List and download prosecution file history
-│   └── format_results.py             # JSON → human-readable output formatting
+│   ├── uspto_client.py         # Shared client: auth, rate limiting, retries
+│   ├── patent_search.py        # Patent search (assignee, keyword, CPC, etc.)
+│   ├── file_wrapper.py         # File wrapper sub-resources
+│   ├── ptab_search.py          # PTAB trials, appeals, interferences
+│   ├── petition_search.py      # Petition decisions
+│   ├── office_actions_search.py # Office action rejections, text, citations
+│   ├── assignment_search.py    # Patent ownership lookups
+│   ├── tsdr_search.py          # Trademark status & documents
+│   ├── bulk_data_search.py     # Bulk dataset discovery & download
+│   ├── download_documents.py   # Prosecution file history download
+│   └── format_results.py       # Output formatting
 └── evals/
-    └── evals.json                     # Test cases for skill evaluation
+    └── evals.json              # Test cases for skill evaluation
 ```
-
-## How It Works
-
-The skill uses a decision matrix to route natural language questions to the right API:
-
-- **"Search by inventor or company"** → PatentsView with ODP fallback (disambiguated name data, fuzzy name matching). *Note: some query operators are currently broken; the skill uses workarounds. If PatentsView is unavailable, searches fall back to ODP automatically.*
-- **"Application status or prosecution docs"** → ODP File Wrapper (real-time data, full file wrappers)
-- **"PTAB challenges"** → ODP PTAB API (IPR/PGR/CBM proceedings and decisions)
-- **"Office action rejections"** → Legacy OA APIs (structured 101/102/103/112 rejection data). *Migrating to ODP.*
-- **"Full text of an office action"** → Legacy OA Text API (examiner's amendments, detailed reasoning). *Migrating to ODP.*
-- **"What prior art was cited?"** → Enriched Citations API (NLP-parsed references with passage locations). *Data frozen as of April 2019.*
-- **"Who owns this patent?"** → ODP Assignment data (complete chain of title)
-- **"Download prosecution documents"** → ODP File Wrapper (PDF download with rate limiting)
-
-For complex questions, the skill chains multiple API calls. For example, "tell me everything about patent X" triggers calls to PatentsView (basic info), Assignments (ownership), PTAB (challenges), and ODP (prosecution history).
-
-## Scripts — Standalone Usage
-
-The scripts also work standalone from the command line:
-
-```bash
-cd scripts/
-
-# Search patents by assignee
-python patentsview_search.py assignee "Tesla"
-
-# Look up a specific patent
-python patentsview_search.py patent 10000000
-
-# Get citations for a patent
-python patentsview_search.py citations 10000000
-
-# Search by inventor
-python patentsview_search.py inventor "Smith" --first "John"
-
-# Search by keyword (title search)
-python patentsview_search.py keyword "autonomous vehicle lidar"
-
-# Search by CPC classification code
-python patentsview_search.py cpc H04L
-
-# Search by attorney or law firm
-python patentsview_search.py attorney "Smith" --org "Fish & Richardson"
-
-# Get application details from ODP
-python odp_search.py get 16123456
-
-# Get file wrapper documents
-python odp_search.py documents 16123456
-
-# Search PTAB proceedings
-python odp_search.py ptab --patent-number 10000000
-
-# Get patent term adjustment data
-python odp_search.py pta 14643719
-
-# Search office action rejections for a patent
-python office_actions_search.py rejections --patent-number 10000000
-
-# Get full text of office actions
-python office_actions_search.py text --patent-number 10000000
-
-# Search enriched citations (prior art cited in OAs)
-python office_actions_search.py citations --app-number 15638789
-
-# Get assignment chain
-python assignment_search.py chain 10000000
-
-# List key prosecution documents
-python download_documents.py list 16123456 --key-only
-
-# Download prosecution file history
-python download_documents.py download 16123456
-```
-
-## Rate Limits
-
-The scripts handle rate limiting automatically with token bucket algorithms and exponential backoff:
-
-| API | Limit | Handling |
-|-----|-------|---------|
-| PatentsView | 45 req/min | Auto-wait + retry |
-| ODP (File Wrapper, PTAB, Assignments) | 60 req/min (4/min for PDFs) | Auto-wait + retry |
-| Legacy OA APIs | 60 req/min | Auto-wait + retry |
 
 ## Security
 
-This project follows security best practices for open-source API key management:
-
-- API keys are loaded from a **`.env` file** (via `python-dotenv`) or **environment variables** — never hardcoded
-- Keys are **never logged, printed, or included in error messages**
-- The `.gitignore` excludes `.env` files to prevent accidental commits
-- The `.env.example` file contains variable names only — no real keys
+- API keys are loaded from a `.env` file (via `python-dotenv`) or environment variables -- never hardcoded
+- Keys are never logged, printed, or included in error messages
+- `.gitignore` excludes `.env` files to prevent accidental commits
+- `.env.example` contains variable names only -- no real keys
 - `get_started.py` masks key values in its output
-
-If you fork this repo, ensure you never commit API keys. See `references/setup-and-auth.md` for detailed security guidance.
-
-## Data Freshness
-
-Different APIs have different update schedules:
-
-| API | Update Frequency | Notes |
-|-----|-----------------|-------|
-| ODP File Wrapper | Daily | Stable — real-time application data |
-| ODP PTAB | Near-real-time | Stable — syncs with PTAB case tracking system |
-| ODP Assignments | Daily | Stable — all recorded assignments |
-| PatentsView | Quarterly | Migrating March 20, 2026 — ~3 month lag for newest grants |
-| Legacy OA Rejections | Daily | Migrating to ODP — June 2018 to ~180 days ago |
-| Legacy OA Text | Daily | Migrating to ODP — office action full text |
-| Enriched Citations | Frozen | v1/v2 decommissioned Jan 2026; v3 migrating to ODP — Oct 2017 – April 2019 only |
-
-**Limitation — recently issued patents:** PatentsView is the primary API for broad keyword, inventor, and assignee searches across granted patents, but it updates quarterly with an approximately 3-month lag. Patents issued in the most recent ~3 months will not appear in PatentsView search results. The ODP File Wrapper API updates daily and can look up specific recent patents by application or patent number, but it does not support the same broad keyword-based discovery searches. There is currently no USPTO API that combines both real-time coverage and full-text search across all granted patents.
-
-## USPTO API Migration (March 20, 2026)
-
-The USPTO is consolidating all patent data APIs onto the [Open Data Portal](https://data.uspto.gov). Several migrations are happening on overlapping timelines, and some have already completed:
-
-### PatentsView → Open Data Portal (March 20, 2026)
-
-The legacy PatentsView website (`www.patentsview.org`) is migrating to the USPTO Open Data Portal on **March 20, 2026**. The USPTO's [transition guide](https://data.uspto.gov/support/transition-guidance/patentsview) currently covers bulk data download table locations on ODP but does not yet address the PatentSearch API (`search.patentsview.org`). It is not yet clear whether the API query format, endpoints, or authentication will change, or whether the API will simply be retired in favor of ODP endpoints and bulk downloads.
-
-The PatentsView team has taken down their community forum and removed the API key request link from patentsview.org. New API keys may still be available via their [Atlassian support portal](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1/group/1/create/18).
-
-**Impact on this skill:** The PatentsView API key is **optional**. Inventor, assignee, keyword, and patent number searches automatically fall back to the ODP search API when PatentsView is unavailable. CPC classification search, attorney search, and citation network queries require PatentsView and will return a descriptive message if it goes offline. No action is needed — the skill will continue working through the transition.
-
-### Legacy Office Action APIs → Open Data Portal (in progress)
-
-The following APIs at `developer.uspto.gov` are being migrated to the new Open Data Portal:
-
-| API | Status |
-|-----|--------|
-| Enriched Citation API v1/v2 | **Decommissioned** (January 30, 2026) |
-| Office Action Citations API (beta) | **Decommissioned** (January 30, 2026) |
-| Enriched Citation API v3 | Migrating to ODP |
-| Office Action Rejection API | Migrating to ODP |
-| Office Action Text Retrieval API | Migrating to ODP |
-
-**What may break:** `office_actions_search.py` — the `developer.uspto.gov/ds-api` base URL and Lucene query syntax will likely change when these move to ODP.
-
-### Known Limitations (current)
-
-- **PatentsView query operators** (`_contains`, `_eq`, `_text_any`, `_gte`, etc.) are currently returning 500 errors. This may be related to the pending migration. The code works around this by using plain value matching and corporate name variant lists for fuzzy search. Year range filtering is temporarily unavailable.
-- **Enriched Citations** data is frozen as of April 2019 and covers only office actions from October 2017 through April 2019. The v1/v2 APIs have been decommissioned; only v3 remains.
-
-### Staying Updated
-
-- Check [data.uspto.gov/support/transition-guidance/patentsview](https://data.uspto.gov/support/transition-guidance/patentsview) for PatentsView migration updates
-- Check [data.uspto.gov](https://data.uspto.gov) for ODP updates and release notes
-- Check [search.patentsview.org/docs](https://search.patentsview.org/docs/) for PatentsView API status
-- Check [developer.uspto.gov](https://developer.uspto.gov) for legacy API decommission notices
 
 ## Contributing
 
@@ -268,4 +295,4 @@ Contributions welcome. If you find an API endpoint has changed or a new USPTO AP
 
 ## License
 
-Apache 2.0
+See LICENSE.
