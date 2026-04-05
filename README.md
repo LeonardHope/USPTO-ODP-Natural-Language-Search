@@ -22,7 +22,7 @@ The skill determines which API to query, builds the request, handles authenticat
 The skill covers the full breadth of the USPTO Open Data Portal:
 
 ### Patent File Wrapper
-- **Search** -- Find patents by assignee, inventor, keyword, CPC classification, examiner, or status
+- **Search** -- Find patents by assignee, inventor, keyword, examiner, art unit, status, or filing/grant date range
 - **Metadata** -- Application status, filing dates, examiner info
 - **Documents** -- Full prosecution file history (office actions, responses, drawings)
 - **Continuity** -- Parent/child/divisional application chains
@@ -85,11 +85,11 @@ python3 get_started.py
 
 The wizard handles everything automatically:
 - Creates a Python virtual environment and installs dependencies
-- Prompts for your API key with a link to where you can get it
+- Prompts for each API key with a link to where you can get it
 - Shows a masked preview so you can confirm what you entered
 - Saves everything to a `.env` file (git-ignored, never committed)
 
-You can re-run `get_started.py` anytime to update your key.
+You can re-run `get_started.py` anytime to update your keys.
 
 ### 3. Try a Query
 
@@ -129,14 +129,17 @@ All commands are run from the `scripts/` directory.
 ### Patent Search
 
 ```bash
-# Search by assignee
-python patent_search.py assignee "Tesla" --limit 10
+# Search by assignee with filing date range
+python patent_search.py assignee "Tesla" --date-from 2020-01-01 --limit 10
 
-# Search by keyword with date filter
-python patent_search.py keyword "autonomous vehicle" --date-from 2020-01-01
+# Search by keyword
+python patent_search.py keyword "autonomous vehicle"
 
-# Search by CPC classification
-python patent_search.py cpc H04L
+# Look up a specific patent
+python patent_search.py patent 10000000
+
+# Search by examiner
+python patent_search.py examiner "Smith"
 ```
 
 ### File Wrapper
