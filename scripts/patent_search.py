@@ -79,12 +79,15 @@ def search_by_assignee(name, date_from=None, date_to=None, limit=25):
     """Search patents by applicant/assignee name.
 
     Uses free-text search with the assignee name. Optionally filters
-    by grant date range.
+    by filing date range.
+
+    Note: "Filed after 2020" uses filingDate. For grant date filtering,
+    pass a custom range_filter via search_patents() directly.
 
     Args:
         name: Applicant or assignee organization name
-        date_from: Start of grant date range (yyyy-MM-dd), optional
-        date_to: End of grant date range (yyyy-MM-dd), optional
+        date_from: Start of filing date range (yyyy-MM-dd), optional
+        date_to: End of filing date range (yyyy-MM-dd), optional
         limit: Maximum results to return (default 25)
 
     Returns:
@@ -92,11 +95,12 @@ def search_by_assignee(name, date_from=None, date_to=None, limit=25):
     """
     range_filters = None
     if date_from or date_to:
-        rf = {"field": "applicationMetaData.grantDate"}
-        if date_from:
-            rf["valueFrom"] = date_from
-        if date_to:
-            rf["valueTo"] = date_to
+        # ODP requires both valueFrom and valueTo in rangeFilters
+        rf = {
+            "field": "applicationMetaData.filingDate",
+            "valueFrom": date_from or "1900-01-01",
+            "valueTo": date_to or "2099-12-31",
+        }
         range_filters = [rf]
 
     return search_patents(q=name, range_filters=range_filters, limit=limit)
@@ -115,8 +119,8 @@ def search_by_inventor(last_name, first_name=None, date_from=None,
     Args:
         last_name: Inventor last name (required)
         first_name: Inventor first name (optional, for exact matching)
-        date_from: Start of grant date range (yyyy-MM-dd), optional
-        date_to: End of grant date range (yyyy-MM-dd), optional
+        date_from: Start of filing date range (yyyy-MM-dd), optional
+        date_to: End of filing date range (yyyy-MM-dd), optional
         limit: Maximum results to return (default 25)
 
     Returns:
@@ -129,11 +133,12 @@ def search_by_inventor(last_name, first_name=None, date_from=None,
 
     range_filters = None
     if date_from or date_to:
-        rf = {"field": "applicationMetaData.grantDate"}
-        if date_from:
-            rf["valueFrom"] = date_from
-        if date_to:
-            rf["valueTo"] = date_to
+        # ODP requires both valueFrom and valueTo in rangeFilters
+        rf = {
+            "field": "applicationMetaData.filingDate",
+            "valueFrom": date_from or "1900-01-01",
+            "valueTo": date_to or "2099-12-31",
+        }
         range_filters = [rf]
 
     return search_patents(q=q, range_filters=range_filters, limit=limit)
@@ -149,8 +154,8 @@ def search_by_keyword(keywords, date_from=None, date_to=None, limit=25):
 
     Args:
         keywords: Free-text search string (e.g. "autonomous vehicle lidar")
-        date_from: Start of grant date range (yyyy-MM-dd), optional
-        date_to: End of grant date range (yyyy-MM-dd), optional
+        date_from: Start of filing date range (yyyy-MM-dd), optional
+        date_to: End of filing date range (yyyy-MM-dd), optional
         limit: Maximum results to return (default 25)
 
     Returns:
@@ -158,11 +163,12 @@ def search_by_keyword(keywords, date_from=None, date_to=None, limit=25):
     """
     range_filters = None
     if date_from or date_to:
-        rf = {"field": "applicationMetaData.grantDate"}
-        if date_from:
-            rf["valueFrom"] = date_from
-        if date_to:
-            rf["valueTo"] = date_to
+        # ODP requires both valueFrom and valueTo in rangeFilters
+        rf = {
+            "field": "applicationMetaData.filingDate",
+            "valueFrom": date_from or "1900-01-01",
+            "valueTo": date_to or "2099-12-31",
+        }
         range_filters = [rf]
 
     return search_patents(q=keywords, range_filters=range_filters, limit=limit)
@@ -252,8 +258,8 @@ def search_by_cpc(cpc_code, date_from=None, date_to=None, limit=25):
 
     Args:
         cpc_code: CPC classification code (e.g. 'H04L', 'G06F 3/01')
-        date_from: Start of grant date range (yyyy-MM-dd), optional
-        date_to: End of grant date range (yyyy-MM-dd), optional
+        date_from: Start of filing date range (yyyy-MM-dd), optional
+        date_to: End of filing date range (yyyy-MM-dd), optional
         limit: Maximum results to return (default 25)
 
     Returns:
@@ -267,11 +273,12 @@ def search_by_cpc(cpc_code, date_from=None, date_to=None, limit=25):
 
     range_filters = None
     if date_from or date_to:
-        rf = {"field": "applicationMetaData.grantDate"}
-        if date_from:
-            rf["valueFrom"] = date_from
-        if date_to:
-            rf["valueTo"] = date_to
+        # ODP requires both valueFrom and valueTo in rangeFilters
+        rf = {
+            "field": "applicationMetaData.filingDate",
+            "valueFrom": date_from or "1900-01-01",
+            "valueTo": date_to or "2099-12-31",
+        }
         range_filters = [rf]
 
     return search_patents(q=cpc_code, range_filters=range_filters, limit=limit)

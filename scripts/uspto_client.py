@@ -96,6 +96,10 @@ class USPTOClient:
 
     def __init__(self):
         self.odp_key = os.environ.get("USPTO_ODP_API_KEY", "")
+        # TSDR uses a separate API key registered at account.uspto.gov.
+        # Falls back to the ODP key if not set (for users whose ODP key
+        # has been activated for TSDR).
+        self.tsdr_key = os.environ.get("USPTO_TSDR_API_KEY", "") or self.odp_key
 
         self._limiters = {
             name: RateLimiter(limit) for name, limit in self.RATE_LIMITS.items()
@@ -114,6 +118,15 @@ class USPTOClient:
                 "[SETUP_REQUIRED] USPTO_ODP_API_KEY is not set.\n"
                 "Run: python3 get_started.py   (from the project root)\n"
                 "Or get a free key at: https://data.uspto.gov/apis/getting-started"
+            )
+
+    def require_tsdr_key(self):
+        if not self.tsdr_key:
+            raise APIError(
+                "[SETUP_REQUIRED] USPTO_TSDR_API_KEY is not set.\n"
+                "TSDR requires a separate API key from the ODP key.\n"
+                "Register for one at: https://account.uspto.gov/api-manager\n"
+                "Then add USPTO_TSDR_API_KEY=your_key to your .env file."
             )
 
     # ── Core request method ─────────────────────────────────────────────
@@ -149,13 +162,13 @@ class USPTOClient:
         Raises:
             APIError: If the request fails after all retries
         """
-        self.require_odp_key()
-
         # Set auth header based on API
         req_headers = {}
         if api == "tsdr":
-            req_headers["USPTO-API-KEY"] = self.odp_key
+            self.require_tsdr_key()
+            req_headers["USPTO-API-KEY"] = self.tsdr_key
         else:
+            self.require_odp_key()
             req_headers["X-API-KEY"] = self.odp_key
         if headers:
             req_headers.update(headers)
@@ -278,11 +291,12 @@ class USPTOClient:
         Raises:
             APIError: If the download fails after all retries
         """
-        self.require_odp_key()
         headers = {"Accept": "application/pdf"}
         if api == "tsdr":
-            headers["USPTO-API-KEY"] = self.odp_key
+            self.require_tsdr_key()
+            headers["USPTO-API-KEY"] = self.tsdr_key
         else:
+            self.require_odp_key()
             headers["X-API-KEY"] = self.odp_key
         limiter = self._limiters.get(api, self._limiters.get("odp_download"))
 
@@ -344,8 +358,11 @@ class USPTOClient:
         Returns:
             Dict with boolean flags for each key.
         """
+        tsdr_explicit = bool(os.environ.get("USPTO_TSDR_API_KEY", ""))
         return {
             "odp_key_set": bool(self.odp_key),
+            "tsdr_key_set": tsdr_explicit or bool(self.odp_key),
+            "tsdr_key_explicit": tsdr_explicit,
         }
 
 

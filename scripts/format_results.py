@@ -159,31 +159,36 @@ def format_patent_detail(patent: dict, source: str = "odp") -> str:
 
 
 def format_ptab_results(response: dict) -> str:
-    """Format PTAB proceeding search results.
+    """Format PTAB trial, appeal, or interference search results.
+
+    Handles multiple response bag types from the various PTAB endpoints.
 
     Args:
         response: PTAB API response
 
     Returns:
-        Formatted PTAB proceedings list
+        Formatted PTAB results list
     """
     if isinstance(response, list):
-        proceedings = response
+        items = response
+        response = {}
     elif isinstance(response, dict):
-        proceedings = (response.get("patentTrialProceedingDataBag", [])
-                       or response.get("patentTrialDecisionDataBag", [])
-                       or response.get("patentTrialDocumentDataBag", [])
-                       or response.get("patentAppealDataBag", [])
-                       or response.get("results", []))
+        # Detect which type of result we're formatting
+        if "patentAppealDataBag" in response:
+            return _format_appeal_results(response)
+        items = (response.get("patentTrialProceedingDataBag", [])
+                 or response.get("patentTrialDecisionDataBag", [])
+                 or response.get("patentTrialDocumentDataBag", [])
+                 or response.get("results", []))
     else:
-        proceedings = []
+        items = []
 
-    total = response.get("count", response.get("totalCount", len(proceedings))) if isinstance(response, dict) else len(proceedings)
+    total = response.get("count", response.get("totalCount", len(items))) if isinstance(response, dict) else len(items)
 
     lines = [f"PTAB Results ({total} found):\n"]
 
-    for i, p in enumerate(proceedings, 1):
-        trial_num = p.get("trialNumber", p.get("appealNumber", p.get("interferenceNumber", "N/A")))
+    for i, p in enumerate(items, 1):
+        trial_num = p.get("trialNumber", p.get("interferenceNumber", "N/A"))
 
         trial_meta = p.get("trialMetaData", {})
         patent_data = p.get("patentOwnerData", {})
@@ -201,6 +206,46 @@ def format_ptab_results(response: dict) -> str:
         lines.append(f"     Filed: {filing_date}")
         lines.append(f"     Petitioner: {petitioner}")
         lines.append(f"     Patent Owner: {patent_owner}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_appeal_results(response: dict) -> str:
+    """Format PTAB appeal decision results.
+
+    Appeals use a different response structure than trial proceedings:
+    appealNumber, appealMetaData, appellantData, decisionData.
+    """
+    appeals = response.get("patentAppealDataBag", [])
+    total = response.get("count", len(appeals))
+
+    lines = [f"PTAB Appeal Decisions ({total} found):\n"]
+
+    for i, a in enumerate(appeals, 1):
+        appeal_num = a.get("appealNumber", "N/A")
+        meta = a.get("appealMetaData", {})
+        appellant = a.get("appellantData", {})
+        decision = a.get("decisionData", {})
+        doc = a.get("documentData", {})
+
+        filing_date = meta.get("appealFilingDate", "N/A")
+        app_type = meta.get("applicationTypeCategory", "N/A")
+        app_num = appellant.get("applicationNumberText", "N/A")
+        art_unit = appellant.get("groupArtUnitNumber", "")
+        tech_center = appellant.get("technologyCenterNumber", "")
+        party = appellant.get("realPartyInInterestName", "N/A")
+        counsel = appellant.get("counselName", "")
+        outcome = decision.get("appealOutcomeCategory", "N/A")
+        decision_date = decision.get("decisionIssueDate", doc.get("documentFilingDate", "N/A"))
+
+        lines.append(f"  {i}. Appeal {appeal_num} ({app_type})")
+        lines.append(f"     App: {app_num} | Art Unit: {art_unit} | TC: {tech_center}")
+        lines.append(f"     Filed: {filing_date} | Decided: {decision_date}")
+        lines.append(f"     Outcome: {outcome}")
+        lines.append(f"     Party: {party}")
+        if counsel:
+            lines.append(f"     Counsel: {counsel}")
         lines.append("")
 
     return "\n".join(lines)
@@ -333,16 +378,27 @@ def format_petition_results(response: dict) -> str:
     lines = [f"Petition Decisions ({total} found):\n"]
 
     for i, d in enumerate(decisions, 1):
-        record_id = d.get("petitionDecisionRecordIdentifier", "N/A")
         app_num = d.get("applicationNumberText", "N/A")
         decision_date = d.get("decisionDate", "N/A")
-        decision_type = d.get("decisionTypeCategory", "N/A")
-        petition_type = d.get("petitionTypeCategory", "N/A")
+        decision = d.get("decisionTypeCodeDescriptionText", d.get("decisionTypeCode", "N/A"))
+        title = d.get("inventionTitle", "")
+        art_unit = d.get("groupArtUnitNumber", "")
+        tech_center = d.get("technologyCenter", "")
+        office = d.get("finalDecidingOfficeName", "")
+        issues = d.get("petitionIssueConsideredTextBag", [])
+        rules = d.get("ruleBag", [])
 
-        lines.append(f"  {i}. {record_id}")
-        lines.append(f"     App: {app_num} | Date: {decision_date}")
-        lines.append(f"     Petition Type: {petition_type}")
-        lines.append(f"     Decision: {decision_type}")
+        lines.append(f"  {i}. App {app_num} — {decision} ({decision_date})")
+        if title:
+            lines.append(f"     Title: {title[:80]}")
+        if issues:
+            lines.append(f"     Issue: {', '.join(issues[:2])}")
+        if rules:
+            lines.append(f"     Rules: {', '.join(rules[:3])}")
+        if office:
+            lines.append(f"     Office: {office}")
+        if art_unit or tech_center:
+            lines.append(f"     Art Unit: {art_unit} | TC: {tech_center}")
         lines.append("")
 
     return "\n".join(lines)
