@@ -63,19 +63,17 @@ The skill covers the full breadth of the USPTO Open Data Portal:
 
 ## Quick Start
 
-### 1. Get Your API Key(s)
+### 1. Get Your API Key
 
-**Required:** USPTO Open Data Portal (ODP) key
+One free API key covers all APIs:
 
 1. Go to [data.uspto.gov/myodp](https://data.uspto.gov/myodp)
 2. Create a USPTO.gov account and verify with ID.me (one-time)
 3. Copy your API key from the My ODP page
 
-This key covers patent search, file wrapper data, PTAB (trials, appeals, interferences), petition decisions, office actions, and bulk datasets.
+This single key covers patent search, file wrapper data, PTAB (trials, appeals, interferences), petition decisions, office actions, bulk datasets, and TSDR (trademark status and document retrieval).
 
-**Optional:** USPTO TSDR (trademark) key
-
-Trademark searches via the TSDR API require a separate key (the USPTO did not consolidate TSDR under the ODP key). Register for one at [account.uspto.gov/api-manager](https://account.uspto.gov/api-manager) if you need trademark support. Leave blank to skip.
+> Note: TSDR was migrated to ODP on 2026-03-24 (release 3.5). If you run into 404 errors on trademark lookups, the migration may still be stabilizing. The patent-side APIs are unaffected.
 
 ### 2. Run the Setup Wizard
 
@@ -240,11 +238,9 @@ All scripts share a common foundation through `uspto_client.py`:
 - **`format_results.py`** converts raw API JSON into human-readable output for each data type.
 - Utility functions `clean_patent_number()`, `clean_app_number()`, and `resolve_patent_to_app_number()` in the client handle format normalization so users can input numbers in any common format (`10,000,000`, `US10000000`, `16/123,456`, etc.).
 
-### API Keys
+### API Key
 
-`USPTO_ODP_API_KEY` from [data.uspto.gov/myodp](https://data.uspto.gov/myodp) covers all patent-side APIs (search, file wrapper, PTAB, petitions, office actions, bulk data).
-
-`USPTO_TSDR_API_KEY` from [account.uspto.gov/api-manager](https://account.uspto.gov/api-manager) is required only for trademark searches via the TSDR API. The USPTO maintains TSDR on a separate key system.
+A single key (`USPTO_ODP_API_KEY`) from [data.uspto.gov/myodp](https://data.uspto.gov/myodp) covers every API in the skill: patent search, file wrapper, PTAB, petitions, office actions, bulk data, and TSDR (trademark). TSDR uses a different HTTP header (`USPTO-API-KEY`) internally but accepts the same key value.
 
 ### Rate Limits
 

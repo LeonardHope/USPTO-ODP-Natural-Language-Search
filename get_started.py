@@ -30,15 +30,8 @@ KEYS = [
         "var": "USPTO_ODP_API_KEY",
         "label": "USPTO Open Data Portal (ODP) API Key",
         "url": "https://data.uspto.gov/myodp",
-        "note": "Covers: Patent File Wrapper, PTAB, Petitions, Office Actions, Bulk Data",
+        "note": "Covers all ODP APIs: Patent File Wrapper, PTAB, Petitions, Office Actions, Bulk Data, TSDR (Trademark)",
         "required": True,
-    },
-    {
-        "var": "USPTO_TSDR_API_KEY",
-        "label": "USPTO TSDR (Trademark) API Key (optional)",
-        "url": "https://account.uspto.gov/api-manager",
-        "note": "Required only for trademark searches. TSDR uses a separate API key from the ODP key. Leave blank to skip trademark support.",
-        "required": False,
     },
 ]
 
